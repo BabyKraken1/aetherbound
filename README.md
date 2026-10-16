@@ -2,6 +2,8 @@
 
 A top-down action RPG by Brody. Pick a class, clear the Shattered Sanctum, and defeat Valkor, Aether Sovereign.
 
+**Play it:** https://babykraken1.github.io/aetherbound/
+
 ## Controls
 - **WASD / arrows**: move
 - **Left click**: attack
@@ -11,4 +13,4 @@ A top-down action RPG by Brody. Pick a class, clear the Shattered Sanctum, and d
 - **R**: play again after winning or dying
 
 ## Editing
-Everything lives in `index.html`. Open it in a browser to play.
+Everything lives in `index.html`. Edit it, commit, push, and the live page updates in about a minute.
