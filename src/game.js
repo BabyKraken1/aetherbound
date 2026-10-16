@@ -3,17 +3,19 @@
 import { TILE, T, STEP, VIEW_MAX_W, VIEW_MAX_H, SAVE_KEY, RARITIES, RARITY_COLOR, ABILITY3_LEVEL } from './config.js';
 import { RNG, dist, clamp } from './util.js';
 import { CLASSES } from './content/classes.js';
-import { REGIONS, HEROIC } from './content/regions.js';
-import { BOSSES } from './content/bosses.js';
+import { REGIONS, HEROIC, NORMAL_MYTHIC_CHANCE } from './content/regions.js';
+import { BOSSES, ALL_BOSSES } from './content/bosses.js';
+import { skinSpriteName } from './content/skins.js';
 import { getBase } from './content/items.js';
-import { computeStats, addXp } from './systems/stats.js';
+import { computeStats, addXp, xpForLevel } from './systems/stats.js';
 import { damageToEnemy, applyDefense } from './systems/damage.js';
 import { addItem, consumeOne, countItem } from './systems/inventory.js';
 import { rollEnemyDrop, rollChest, rollBossDrop, vendorStock, makeItem } from './systems/loot.js';
 import { defaultSave, loadSave, writeSave } from './systems/save.js';
 import { generateDungeon } from './world/dungeon.js';
 import { buildHub } from './world/hub.js';
-import { renderLevel, drawTile } from './render/tileset.js';
+import { LevelRenderer, THEMES } from './render/tileset.js';
+import { generateWorld, regionAt, THEME_IDS, TOWN_BIOME } from './world/overworld.js';
 import { collides } from './world/tilemap.js';
 import { buildSprites, drawSprite, drawNumber } from './render/sprites.js';
 import { Player } from './entities/player.js';
@@ -24,14 +26,15 @@ import { FX } from './entities/fx.js';
 import { makeHazard, updateHazard, renderHazardBelow, renderHazardAbove } from './entities/hazards.js';
 import { Pickup, Chest } from './entities/pickups.js';
 
-const HAZARD_NAME = { moss: 'thorns', cinder: 'lava', prism: 'rift energy', hub: 'thorns' };
+const HAZARD_NAME = { moss: 'thorns', cinder: 'lava', prism: 'rift energy', frost: 'black ice', hub: 'thorns' };
+const WORLD_ENEMY_CAP = 24;
 const TUTORIAL = [
   { id: 'move', text: 'Move with W A S D' },
   { id: 'attack', text: 'Hold LEFT CLICK to attack a training dummy (east of the plaza)' },
   { id: 'dodge', text: 'Press SPACE to dodge roll. You cannot be hurt mid-roll' },
   { id: 'ability', text: 'Press Q or RIGHT CLICK to use an ability' },
   { id: 'inventory', text: 'Press I to open your inventory' },
-  { id: 'portal', text: 'Walk to the green portal (north-west) and press F' },
+  { id: 'kill', text: 'Leave town by any road and defeat an enemy. Kills can open dungeon portals!' },
 ];
 
 export class Game {
@@ -103,7 +106,7 @@ export class Game {
     this.save.currentClass = cls;
     this.mode = 'play';
     this.ui.hideAll();
-    this.enterHub(true);
+    this.enterWorld({ town: true, first: true });
     this.saveNow();
   }
   changeClass(cls) {
@@ -136,8 +139,9 @@ export class Game {
   loadLevel(map, theme) {
     this.map = map;
     this.theme = theme;
-    this.level = renderLevel(map, theme);
+    this.level = new LevelRenderer(map, () => theme);
   }
+  themeObj() { return THEMES[this.theme] || THEMES.hub; }
 
   enterTitle() {
     this.mode = 'title';
@@ -153,29 +157,161 @@ export class Game {
     this.ui.showTitle(this.hasSave, this.save);
   }
 
-  enterHub(first = false) {
-    this.area = 'hub';
+  getWorld() {
+    if (!this.world || this.world.seed !== this.save.worldSeed) {
+      this.world = generateWorld(this.save.worldSeed);
+      this.world.seed = this.save.worldSeed;
+      this.lairTimers = {};
+    }
+    return this.world;
+  }
+
+  // The open world. opts: {town: true} spawns in town; {x, y} returns to a spot (e.g. a dungeon entrance).
+  enterWorld(opts = { town: true }) {
+    this.area = 'world';
     this.clearWorld();
+    const w = this.getWorld();
     this.regionDef = REGIONS[0];
     this.tierMult = { hp: 1, dmg: 1 };
     this.heroicMult = { hp: 1, dmg: 1 };
-    const hub = buildHub(new RNG(7));
-    this.hub = hub;
-    this.loadLevel(hub.map, 'hub');
-    this.addProps(hub.props);
+    this.heroic = false;
+    this.map = w.map;
+    this.map.closedRooms.clear();
+    this.theme = 'hub';
+    this.level = this.worldLevel && this.worldLevel.map === w.map ? this.worldLevel : (this.worldLevel = new LevelRenderer(w.map, (x, y) => THEME_IDS[w.map.biome[w.map.idx(x, y)]]));
+    this.addProps(w.props);
     this.dungeon = null;
     this.run = null;
-    if (!this.vendorStock || !first) this.vendorStock = vendorStock(this.rng, this.save.regionsUnlocked - 1);
-    for (const n of hub.npcs) this.addHubNpc(n);
+    this.currentRoom = null;
+    if (!this.vendorStock || !opts.first) this.vendorStock = vendorStock(this.rng, this.save.regionsUnlocked - 1);
+    for (const n of w.npcs) this.addHubNpc(n);
+    for (const l of w.lairs) this.maybeSpawnMini(l);
     this.spawnPlayer();
-    this.player.x = hub.spawn.tx * TILE + 8; this.player.y = hub.spawn.ty * TILE + 8;
+    if (opts.town || opts.x == null) { this.player.x = w.spawn.tx * TILE + 8; this.player.y = w.spawn.ty * TILE + 8; }
+    else { const p = this.findFreeSpot(opts.x, opts.y, 6) || { x: w.spawn.tx * TILE + 8, y: w.spawn.ty * TILE + 8 }; this.player.x = p.x; this.player.y = p.y; }
+    this.worldBiome = null;
+    this.spawnTimer = 1;
     this.snapCamera();
-    this.audio.music('hub');
-    this.ui.banner('Emberlight Haven', 'The last safe hearth in the Riftlands');
-    if (!this.save.tutorialDone) this.tutorial = { step: 0, moved: 0, dummyHits: 0 };
+    this.updateBiome(true);
+    if (!this.save.tutorialDone) this.tutorial = this.tutorial || { step: 0, moved: 0, dummyHits: 0 };
     else this.tutorial = null;
     this.ui.setTutorial(this.tutorialText());
     this.saveNow();
+  }
+
+  // compatibility: anything that used to send you to the hub now sends you to town
+  enterHub() { this.enterWorld({ town: true }); }
+
+  inTown(x, y) {
+    const t = this.world?.town;
+    if (!t || this.area !== 'world') return false;
+    const tx = x / TILE, ty = y / TILE;
+    return tx >= t.x0 - 1 && tx <= t.x1 + 1 && ty >= t.y0 - 1 && ty <= t.y1 + 1;
+  }
+
+  updateBiome(force) {
+    const r = regionAt(this.world, this.player.x, this.player.y);
+    if (!force && r === this.worldBiome) return;
+    this.worldBiome = r;
+    if (r < 0) {
+      this.theme = 'hub';
+      this.regionDef = REGIONS[0];
+      this.tierMult = { hp: 1, dmg: 1 };
+      this.audio.music('hub');
+      this.ui.banner('Emberlight Haven', 'The last safe hearth in the Riftlands');
+    } else {
+      const reg = REGIONS[r];
+      this.theme = reg.theme;
+      this.regionDef = reg;
+      this.tierMult = { hp: reg.diff.hp, dmg: reg.diff.dmg };
+      this.audio.music(reg.theme);
+      this.ui.banner(reg.name, `Danger ${'★'.repeat(r + 1)}${'☆'.repeat(3 - r)}  ·  Recommended level ${reg.recommended}+`);
+    }
+  }
+
+  updateWorld(dt) {
+    const pl = this.player;
+    // biome changes (checked a few times a second)
+    this.biomeCheck = (this.biomeCheck || 0) - dt;
+    if (this.biomeCheck <= 0) { this.biomeCheck = 0.25; this.updateBiome(false); }
+    // despawn far-away enemies and keep the town safe
+    for (const e of this.enemies) {
+      if (e.isDummy || e.isBoss || e.dead) continue;
+      const d = dist(e.x, e.y, pl.x, pl.y);
+      if (d > 700 || this.inTown(e.x, e.y)) { e.dead = true; e.despawned = true; }
+    }
+    // keep a population of enemies around the player
+    this.spawnTimer -= dt;
+    if (this.spawnTimer <= 0) {
+      this.spawnTimer = 0.6;
+      const live = this.enemies.filter((e) => !e.dead && !e.isDummy && !e.isBoss).length;
+      if (live < WORLD_ENEMY_CAP) this.spawnWorldPack();
+    }
+    // world portals expire
+    for (const n of this.npcs) if (n.kind === 'worldPortal') { n.ttl -= dt; if (n.ttl <= 0) n.gone = true; }
+    if (this.npcs.some((n) => n.gone)) {
+      this.npcs = this.npcs.filter((n) => !n.gone);
+      this.interactables = this.interactables.filter((i) => !(i.portal && i.portal.gone));
+    }
+    // mini-boss respawns
+    for (const l of this.world.lairs) this.maybeSpawnMini(l);
+  }
+
+  spawnWorldPack() {
+    const pl = this.player, map = this.map;
+    for (let tries = 0; tries < 12; tries++) {
+      const a = Math.random() * Math.PI * 2, d = 240 + Math.random() * 120;
+      const x = pl.x + Math.cos(a) * d, y = pl.y + Math.sin(a) * d;
+      const t = map.tileAt(x, y);
+      if (t !== T.FLOOR && t !== T.PATH) continue;
+      const r = regionAt(this.world, x, y);
+      if (r < 0 || this.inTown(x, y) || collides(map, x, y, 8)) continue;
+      // no packs right next to a mini-boss lair
+      if (this.world.lairs.some((l) => dist(x, y, l.tx * TILE, l.ty * TILE) < 140)) continue;
+      const region = REGIONS[r];
+      const weights = Object.entries(region.weights).map(([k, w]) => ({ w, v: k }));
+      const n = 2 + Math.floor(Math.random() * 3);
+      for (let i = 0; i < n; i++) {
+        const kind = this.rng.weighted(weights);
+        const spot = this.findFreeSpot(x + (Math.random() - 0.5) * 40, y + (Math.random() - 0.5) * 40, 8);
+        if (!spot || this.inTown(spot.x, spot.y)) continue;
+        this.enemies.push(new Enemy(this, kind, spot.x, spot.y, { region, tier: { hp: region.diff.hp, dmg: region.diff.dmg }, elite: Math.random() < 0.06 }));
+      }
+      return;
+    }
+  }
+
+  maybeSpawnMini(l) {
+    const id = l.bossId;
+    if (this.enemies.some((e) => e.bossId === id && !e.dead)) return;
+    if ((this.lairTimers[id] || 0) > this.time) return;
+    const x = l.tx * TILE + 8, y = l.ty * TILE + 8;
+    const room = { id: -100 - l.region, x0: l.tx - 9, y0: l.ty - 7, x1: l.tx + 9, y1: l.ty + 7, w: 19, h: 15, centerX: l.tx + 0.5, centerY: l.ty + 0.5 };
+    const b = new Boss(this, id, x, y, room);
+    this.enemies.push(b);
+  }
+
+  onMiniAggro(b) {
+    this.boss = b;
+    this.ui.bossBar(b);
+    this.audio.play('roar');
+    this.ui.toast(`${b.name}, ${b.title}! ${b.data.signature}`, b.data.color, 4);
+  }
+  onMiniReset(b) {
+    if (this.boss === b) { this.boss = null; this.ui.bossBar(null); }
+  }
+
+  spawnWorldPortal(x, y, regionIndex, heroic) {
+    const region = REGIONS[regionIndex];
+    const portal = { kind: 'worldPortal', x, y, region, heroic, ttl: 60 };
+    this.npcs.push(portal);
+    this.interactables.push({
+      x, y: y + 4, r: 22, portal,
+      get label() { return `Enter ${heroic ? 'Heroic ' : ''}${region.name} dungeon (${Math.ceil(portal.ttl)}s)`; },
+      action: (g) => { portal.gone = true; g.enterDungeon(regionIndex, heroic, { x, y }); },
+    });
+    this.audio.play('portal');
+    this.ui.toast(`A ${heroic ? 'Heroic ' : ''}dungeon portal opened! It closes in 60s.`, region.portal, 4);
   }
 
   addHubNpc(n) {
@@ -216,8 +352,9 @@ export class Game {
     this.ui.showPortal(REGIONS[regionIndex], this.save, this.classState().level);
   }
 
-  enterDungeon(regionIndex, heroic = false) {
+  enterDungeon(regionIndex, heroic = false, returnPoint = null) {
     const region = REGIONS[regionIndex];
+    this.returnPoint = returnPoint || (this.area === 'world' && this.player ? { x: this.player.x, y: this.player.y + 24 } : null);
     this.closeOverlay();
     this.area = 'dungeon';
     this.clearWorld();
@@ -243,8 +380,16 @@ export class Game {
     this.save.stats.runs++;
     this.audio.music(region.theme);
     this.ui.banner(region.name + (heroic ? ' (Heroic)' : ''), region.sub);
-    if (this.tutorial) { this.save.tutorialDone = true; this.tutorial = null; this.ui.setTutorial(null); this.ui.toast('Doors seal behind you until a room is cleared. Good luck!', '#ffd36b'); }
+    if (this.tutorial) { this.save.tutorialDone = true; this.tutorial = null; this.ui.setTutorial(null); }
+    this.ui.toast('Doors seal behind you until a room is cleared. Good luck!', '#ffd36b');
     this.saveNow();
+  }
+
+  // leave a dungeon back to where you entered it (or town)
+  returnToWorld() {
+    const rp = this.returnPoint;
+    this.returnPoint = null;
+    this.enterWorld(rp ? { x: rp.x, y: rp.y } : { town: true });
   }
 
   setupRoom(r) {
@@ -296,6 +441,7 @@ export class Game {
     const cls = this.save.currentClass;
     const old = this.player;
     this.player = new Player(cls, old ? old.x : 0, old ? old.y : 0);
+    this.player.spriteName = skinSpriteName(cls, this.save.selectedSkins[cls]);
     this.refreshStats();
     this.player.hp = this.player.stats.maxHp;
     this.player.mp = this.player.stats.maxMp;
@@ -379,6 +525,7 @@ export class Game {
     this.pickups = this.pickups.filter((p) => !p.dead);
     this.fx.update(wdt);
     if (this.area === 'dungeon') this.updateRooms();
+    else if (this.area === 'world') this.updateWorld(wdt);
     this.updateInteraction();
     this.updateTutorial(dt);
     this.updateCamera(dt);
@@ -398,6 +545,8 @@ export class Game {
       else if (!this.overlay || this.overlay === 'vendor') this.openOverlay('inventory');
     }
     if (inp.wasPressed('KeyM')) this.ui.toggleMinimap();
+    if (inp.wasPressed('KeyK')) { if (this.overlay === 'index') this.closeOverlay(); else if (!this.overlay) this.openOverlay('index'); }
+    if (inp.wasPressed('Backquote')) { if (this.overlay === 'admin') this.closeOverlay(); else if (!this.overlay) this.openOverlay('admin'); }
   }
 
   openOverlay(name) {
@@ -408,6 +557,9 @@ export class Game {
     if (name === 'inventory') { this.ui.showInventory(this); this.onAction('inventory'); }
     if (name === 'vendor') this.ui.showVendor(this);
     if (name === 'board') this.ui.showBoard(this);
+    if (name === 'index') this.ui.showIndex(this);
+    if (name === 'admin') this.ui.showAdmin(this);
+    if (name === 'wardrobe') this.ui.showWardrobe(this);
     this.audio.play('click');
   }
   closeOverlay() {
@@ -532,7 +684,7 @@ export class Game {
       x, y, warn: delay, color,
       onDone: (g) => {
         if (r) r.pending--;
-        if (g.area !== 'dungeon') return;
+        if (g.area === 'title') return;
         const e = new Enemy(g, kind, x, y, opts);
         g.enemies.push(e);
         g.fx.burst(x, y - 6, 10, [color, '#ffffff'], 40, 0.3);
@@ -572,6 +724,7 @@ export class Game {
   }
 
   bossDefeated(b) {
+    if (this.area === 'world' || b.isMini) { this.worldBossDefeated(b); return; }
     b.state = 'dying';
     b.invuln = true;
     this.slowmoT = 1.6;
@@ -594,10 +747,37 @@ export class Game {
     };
   }
 
+  worldBossDefeated(b) {
+    b.state = 'dying';
+    b.invuln = true;
+    this.slowmoT = 0.8;
+    this.audio.play('bossDie');
+    for (const e of this.enemies) if (e.parent === b && !e.dead) { e.hp = 0; this.killEnemy(e, true); }
+    this.shake(12);
+    this.fx.burst(b.x, b.cy, 70, [b.data.color, '#ffffff', '#ffd36b'], 150, 0.9, 2);
+    this.fx.ring(b.x, b.cy, 10, 100, 0.6, '#ffffff', 3);
+    b.dead = true;
+    if (this.boss === b) { this.boss = null; this.ui.bossBar(null); }
+    const save = this.save;
+    const loot = rollBossDrop(this.rng, { bossId: b.bossId, region: b.regionIndex, pity: 0, heroic: false, mythicChance: b.isMini ? 0.025 : NORMAL_MYTHIC_CHANCE });
+    this.dropLoot(b.x, b.y, loot);
+    this.gainXp(b.data.xp);
+    if (b.isMini) {
+      if (!save.minibossesDefeated.includes(b.bossId)) save.minibossesDefeated.push(b.bossId);
+      this.lairTimers[b.bossId] = this.time + 120;
+      this.ui.toast(`${b.name} defeated! It will return in 2 minutes.`, b.data.color, 4);
+      if (this.area === 'world' && Math.random() < 0.5) this.spawnWorldPortal(b.x, b.y + 30, b.regionIndex, save.heroicUnlocked && Math.random() < 0.35);
+    } else if (!save.bossesDefeated.includes(b.bossId)) {
+      save.bossesDefeated.push(b.bossId);
+    }
+    this.save.stats.kills++;
+    this.queueSave();
+  }
+
   finishBossRewards(b) {
     const save = this.save, region = this.regionDef;
     const firstKill = !save.bossesDefeated.includes(b.bossId);
-    const loot = rollBossDrop(this.rng, { bossId: b.bossId, region: region.index, firstKill, pity: save.pity, heroic: this.heroic, mythicChance: this.heroic ? HEROIC.mythicChance : 0.02 });
+    const loot = rollBossDrop(this.rng, { bossId: b.bossId, region: region.index, pity: save.pity, heroic: this.heroic, mythicChance: this.heroic ? HEROIC.mythicChance : NORMAL_MYTHIC_CHANCE });
     save.pity = loot.pity;
     this.dropLoot(b.x, b.y, loot);
     this.gainXp(b.data.xp * (this.heroic ? 1.5 : 1));
@@ -615,9 +795,9 @@ export class Game {
       }
       if (b.bossId === 'lumen') {
         save.heroicUnlocked = true;
-        this.run.unlocks.push('Heroic difficulty unlocked for every region (better loot, Mythic drops)');
-        this.run.finalVictory = true;
+        this.run.unlocks.push('Heroic difficulty unlocked for every region (better loot, more Mythics)');
       }
+      if (b.bossId === 'glacius') this.run.finalVictory = true;
     }
     for (const u of this.run.unlocks) this.ui.toast(u, '#ffd36b', 5);
     // exit portal
@@ -637,6 +817,46 @@ export class Game {
     this.overlay = this.run.finalVictory ? 'victory' : 'complete';
     this.ui.showComplete(this, this.run, !!this.run.finalVictory);
     this.saveNow();
+  }
+
+  // ───────────────────────── admin panel ─────────────────────────
+  adminGive(baseId, qty = 1) {
+    const base = getBase(baseId);
+    const it = makeItem(baseId, this.rng, base.stack ? Math.min(qty, base.stack) : undefined);
+    if (!this.collectItem(it)) { this.dropLoot(this.player.x, this.player.y, { items: [it] }); this.ui.toast('Bag full: dropped it at your feet', '#ffa630'); }
+  }
+
+  adminSpawnBoss(id) {
+    const pl = this.player, def = ALL_BOSSES[id];
+    if (!def) return;
+    const spot = this.findFreeSpot(pl.x, pl.y - 100, 14) || { x: pl.x, y: pl.y - 60 };
+    const tx = Math.floor(spot.x / TILE), ty = Math.floor(spot.y / TILE);
+    const room = this.area === 'dungeon' && this.currentRoom ? this.currentRoom
+      : { id: -200, x0: tx - 11, y0: ty - 6, x1: tx + 11, y1: ty + 10, w: 23, h: 17, centerX: tx + 0.5, centerY: ty + 2.5 };
+    const b = new Boss(this, id, spot.x, spot.y, room);
+    b.state = 'fight'; b.invuln = false; b.aggro = true; b.wait = 1.2;
+    this.enemies.push(b);
+    this.boss = b;
+    this.ui.bossBar(b);
+    this.audio.play('bossIntro');
+    this.ui.toast(`Admin: spawned ${def.name}`, def.color, 3);
+  }
+
+  adminCheat(kind) {
+    const s = this.save, pl = this.player;
+    switch (kind) {
+      case 'gold': s.gold += 1000; break;
+      case 'level': for (let i = 0; i < 5; i++) this.gainXp(xpForLevel(this.classState().level)); break;
+      case 'heal': pl.hp = pl.stats.maxHp; pl.mp = pl.stats.maxMp; break;
+      case 'god': this.god = !this.god; this.ui.toast(`God mode ${this.god ? 'ON' : 'OFF'}`, '#ffd36b'); break;
+      case 'unlock':
+        s.regionsUnlocked = REGIONS.length; s.heroicUnlocked = true;
+        for (const c of Object.keys(CLASSES)) if (!s.unlockedClasses.includes(c)) s.unlockedClasses.push(c);
+        this.ui.toast('All regions, classes and Heroic mode unlocked', '#ffd36b');
+        break;
+      case 'clear': for (const e of this.enemies) if (!e.dead && !e.isDummy) { e.hp = 0; this.killEnemy(e, true); if (e.isBoss) e.dead = true; } this.boss = null; this.ui.bossBar(null); break;
+    }
+    this.queueSave();
   }
 
   // ───────────────────────── combat callbacks ─────────────────────────
@@ -692,12 +912,16 @@ export class Game {
     this.fx.burst(e.x, e.cy ?? e.y, 16, ['#ffffff', '#c9b9a0', e.pal === 'cinder' ? '#ff7a3a' : e.pal === 'prism' ? '#7ae0ff' : '#6dbb4f'], 70, 0.45, 2);
     if (silent) return;
     this.audio.play('enemyDie');
-    if (this.area !== 'dungeon') return;
-    this.run.kills++;
+    if (this.area === 'title' || e.isDummy) return;
+    if (this.run) this.run.kills++;
     this.save.stats.kills++;
     this.gainXp(e.xp || 1);
+    this.onAction('kill');
+    const regionIndex = e.regionIndex ?? this.regionDef.index;
+    if (this.area === 'world' && !e.parent && Math.random() < (e.elite ? 0.1 : 0.015))
+      this.spawnWorldPortal(e.x, e.y, regionIndex, this.save.heroicUnlocked && e.elite && Math.random() < 0.3);
     if (!e.noDrop && !(e.arch && e.arch.noDrop)) {
-      const loot = rollEnemyDrop(this.rng, { region: this.regionDef.index, elite: e.elite || e.miniboss, tierBump: this.heroic ? 1 : 0 });
+      const loot = rollEnemyDrop(this.rng, { region: regionIndex, elite: e.elite || e.miniboss, tierBump: this.heroic ? 1 : 0 });
       if (e.miniboss) loot.gold *= 3;
       this.dropLoot(e.x, e.y, loot);
     }
@@ -705,7 +929,7 @@ export class Game {
     if (e.twist === 'deathBurst') {
       for (let i = 0; i < 6; i++) {
         const a = (i * Math.PI) / 3 + Math.random();
-        this.projectiles.spawn({ x: e.x, y: e.cy, vx: Math.cos(a) * 85, vy: Math.sin(a) * 85, size: 3, dmg: Math.round(9 * e.dmgMul), friendly: false, life: 1.4, style: 'shard', owner: e.name + "'s shards" });
+        this.projectiles.spawn({ x: e.x, y: e.cy, vx: Math.cos(a) * 85, vy: Math.sin(a) * 85, size: 3, dmg: Math.round(9 * e.dmgMul), friendly: false, life: 1.4, style: e.pal === 'frost' ? 'ice' : 'shard', owner: e.name + "'s shards" });
       }
     }
   }
@@ -715,7 +939,7 @@ export class Game {
       this.pickups.push(new Pickup(x, y, it));
       const base = getBase(it.base);
       const rank = RARITIES.indexOf(base.rarity);
-      if (rank >= 4) { this.audio.play('legendary'); this.ui.toast(`${base.name} dropped!`, RARITY_COLOR[base.rarity], 4); this.shake(4); }
+      if (rank >= 4) { this.audio.play('legendary'); this.ui.lootPopup(base, !this.save.discovered.includes(base.id)); this.shake(rank >= 5 ? 10 : 4); }
       else if (rank >= 2) this.audio.play('rare');
     }
     let gold = loot.gold || 0;
@@ -731,6 +955,10 @@ export class Game {
     if (!addItem(this.save.inventory, item)) return false;
     this.audio.play('pickup');
     this.ui.toast(`${base.name}${(item.qty || 1) > 1 ? ' x' + item.qty : ''}`, RARITY_COLOR[base.rarity], 2.2, item);
+    if (!this.save.discovered.includes(base.id)) {
+      this.save.discovered.push(base.id);
+      if (base.rarity === 'legendary' || base.rarity === 'mythic') this.ui.toast('New entry in your Index! (press K)', RARITY_COLOR[base.rarity], 3.5);
+    }
     if (this.run) this.run.items.push(item);
     if (this.overlay === 'inventory') this.ui.refreshInventory(this);
     this.queueSave();
@@ -767,7 +995,7 @@ export class Game {
   // Returns true if damage was applied.
   damagePlayer(raw, source, o = {}) {
     const pl = this.player;
-    if (pl.dead || this.cinematic || this.overlay === 'dead') return false;
+    if (pl.dead || this.cinematic || this.overlay === 'dead' || this.god) return false;
     if (!o.dot && pl.isInvulnerable()) return false;
     if (o.dot && (pl.dodgeT > 0 || pl.leap)) return false;
     let dmg = applyDefense(raw, pl.stats.def);
@@ -823,13 +1051,14 @@ export class Game {
 
   respawnAtHub() {
     this.closeOverlay();
-    this.enterHub();
+    this.returnPoint = null;
+    this.enterWorld({ town: true });
     this.ui.toast('You wake in Emberlight Haven. Your items are safe.', '#c9d1e0', 4);
   }
 
   abandonRun() {
     this.closeOverlay();
-    this.enterHub();
+    this.returnToWorld();
   }
 
   usePotion(baseId) {
@@ -858,8 +1087,8 @@ export class Game {
       case 'return':
         this.closeOverlay();
         this.audio.play('portal');
-        this.ui.toast('The scroll carries you home with your loot.', '#4f8bff', 3);
-        this.enterHub();
+        this.ui.toast('The scroll carries you out with your loot.', '#4f8bff', 3);
+        this.returnToWorld();
         break;
     }
     this.fx.burst(pl.x, pl.y - 8, 12, ['#ffffff', RARITY_COLOR[base.rarity]], 50, 0.4);
@@ -874,10 +1103,8 @@ export class Game {
       this.shake(5);
       this.fx.burst(tx * TILE + 8, ty * TILE + 8, 30, ['#8e889b', '#6b6577', '#c9d1e0'], 90, 0.6, 2);
       this.ui.toast('A hidden passage crumbles open!', '#b46cff');
-      for (const [x, y] of this.map.dirty) {
-        for (let yy = y - 1; yy <= y + 1; yy++) for (let xx = x - 1; xx <= x + 1; xx++)
-          drawTile(this.level.canvas.getContext('2d'), this.map, this.level.tiles, this.level.theme, xx, yy);
-      }
+      for (const [x, y] of this.map.dirty)
+        for (let yy = y - 1; yy <= y + 1; yy++) for (let xx = x - 1; xx <= x + 1; xx++) this.level.invalidate(xx, yy);
       this.map.dirty.length = 0;
     } else {
       this.fx.burst(tx * TILE + 8, ty * TILE + 8, 4, ['#8e889b', '#c9d1e0'], 40, 0.3);
@@ -912,7 +1139,7 @@ export class Game {
 
   updateTutorial(dt) {
     const t = this.tutorial;
-    if (!t || this.area !== 'hub') return;
+    if (!t || this.area !== 'world') return;
     const step = TUTORIAL[t.step];
     if (!step) return;
     if (step.id === 'move' && this.player.moving) { t.moved += dt; if (t.moved > 0.6) this.advanceTutorial(); }
@@ -938,8 +1165,8 @@ export class Game {
       return `Find and defeat ${BOSSES[this.regionDef.boss].name}`;
     }
     const next = REGIONS.find((r) => !s.bossesDefeated.includes(r.boss));
-    if (next) return `Defeat ${BOSSES[next.boss].name} in the ${next.name}`;
-    return 'Every realm is saved. Hunt Mythic loot in Heroic mode';
+    if (next) return `Defeat ${BOSSES[next.boss].name} (${next.name} dungeon: town portal or a dungeon portal)`;
+    return 'Every realm is saved. Hunt Mythics in Heroic dungeons and mini-boss lairs';
   }
 
   // ───────────────────────── camera ─────────────────────────
@@ -992,7 +1219,7 @@ export class Game {
     const ctx = this.ctx, v = this.view;
     if (!this.level) return;
     ctx.imageSmoothingEnabled = false;
-    ctx.fillStyle = this.level.theme.bg;
+    ctx.fillStyle = this.themeObj().bg;
     ctx.fillRect(0, 0, v.w, v.h);
     if (this.mode === 'title') {
       const t = this.titleCam.t;
@@ -1005,11 +1232,8 @@ export class Game {
     const cx = Math.round(this.cam.x + sx), cy = Math.round(this.cam.y + sy);
     ctx.save();
     ctx.translate(-cx, -cy);
-    // static level
-    const lc = this.level.canvas;
-    const srcX = Math.max(0, cx), srcY = Math.max(0, cy);
-    const w = Math.min(v.w + 2, lc.width - srcX), h = Math.min(v.h + 2, lc.height - srcY);
-    if (w > 0 && h > 0) ctx.drawImage(lc, srcX, srcY, w, h, srcX, srcY, w, h);
+    // static level (cached in chunks)
+    this.level.draw(ctx, cx, cy, v.w, v.h);
     this.renderAnimatedTiles(ctx, cx, cy);
 
     for (const h2 of this.hazards) renderHazardBelow(ctx, h2, this.time);
@@ -1036,7 +1260,7 @@ export class Game {
     for (const h2 of this.hazards) renderHazardAbove(ctx, h2, this.time);
     ctx.restore();
 
-    if (this.level.theme.dark > 0 && this.mode === 'play') this.renderLighting(ctx, cx, cy);
+    if (this.themeObj().dark > 0 && this.mode === 'play') this.renderLighting(ctx, cx, cy);
     ctx.save();
     ctx.translate(-cx, -cy);
     this.fx.renderTexts(ctx, true);
@@ -1045,15 +1269,15 @@ export class Game {
   }
 
   renderAnimatedTiles(ctx, cx, cy) {
-    const map = this.map, tiles = this.level.tiles;
+    const map = this.map, lv = this.level;
     const x0 = Math.max(0, Math.floor(cx / TILE)), y0 = Math.max(0, Math.floor(cy / TILE));
     const x1 = Math.min(map.w - 1, x0 + Math.ceil(this.view.w / TILE) + 1), y1 = Math.min(map.h - 1, y0 + Math.ceil(this.view.h / TILE) + 1);
     const f = Math.floor(this.time * 5) % 4;
     for (let y = y0; y <= y1; y++)
       for (let x = x0; x <= x1; x++) {
         const t = map.t[y * map.w + x];
-        if (t === T.HAZARD) ctx.drawImage(tiles.hazard[(f + x + y) % 4], x * TILE, y * TILE);
-        else if (t === T.WATER) ctx.drawImage(tiles.water[(f + x) % 4], x * TILE, y * TILE);
+        if (t === T.HAZARD) ctx.drawImage(lv.tilesFor(lv.themeAt(x, y)).hazard[(f + x + y) % 4], x * TILE, y * TILE);
+        else if (t === T.WATER) ctx.drawImage(lv.tilesFor(lv.themeAt(x, y)).water[(f + x) % 4], x * TILE, y * TILE);
         else if (t === T.GATE) {
           const closed = map.isSolid(x, y);
           if (closed) {
@@ -1076,7 +1300,7 @@ export class Game {
       case 'vendor': drawSprite(ctx, 'hero_vendor', Math.floor(t * 2) % 2, n.x, n.y); this.drawLabel(ctx, 'SHOP', n.x, n.y - 28, '#ffd36b'); break;
       case 'shrine': this.drawLabel(ctx, 'CLASS', n.x, n.y - 44, '#7ae0ff'); break;
       case 'board': drawSprite(ctx, 'board', 0, n.x, n.y); break;
-      case 'portal': case 'exitPortal': this.renderPortal(ctx, n); break;
+      case 'portal': case 'exitPortal': case 'worldPortal': this.renderPortal(ctx, n); break;
       case 'fountainShrine': {
         drawSprite(ctx, 'fountain', n.used ? 0 : Math.floor(t * 3) % 2, n.x, n.y + 8);
         if (!n.used) { ctx.globalAlpha = 0.3 + 0.2 * Math.sin(t * 3); ctx.fillStyle = '#5fd068'; ctx.beginPath(); ctx.ellipse(n.x, n.y + 4, 18, 8, 0, 0, Math.PI * 2); ctx.fill(); ctx.globalAlpha = 1; }
@@ -1095,7 +1319,7 @@ export class Game {
   renderPortal(ctx, n) {
     const t = this.time;
     const locked = n.locked && n.locked();
-    const col = n.kind === 'exitPortal' ? '#ffffff' : n.region.portal;
+    const col = n.kind === 'exitPortal' ? '#ffffff' : n.heroic ? '#ff7ae6' : n.region.portal;
     ctx.fillStyle = '#3b3446';
     ctx.beginPath(); ctx.ellipse(n.x, n.y + 2, 18, 7, 0, 0, Math.PI * 2); ctx.fill();
     ctx.fillStyle = '#5a5070';
@@ -1117,7 +1341,8 @@ export class Game {
       ctx.globalAlpha = 1;
       if (Math.random() < 0.3) this.fx.particle(n.x + (Math.random() - 0.5) * 18, n.y - 4, 0, -30, 0.7, col);
     }
-    if (n.region) this.drawLabel(ctx, n.region.name, n.x, n.y - 40, locked ? '#8e889b' : col);
+    if (n.kind === 'worldPortal') this.drawLabel(ctx, `${Math.ceil(n.ttl)}`, n.x, n.y - 40, col);
+    else if (n.region) this.drawLabel(ctx, n.region.name, n.x, n.y - 40, locked ? '#8e889b' : col);
   }
 
   renderLighting(ctx, cx, cy) {
@@ -1129,8 +1354,8 @@ export class Game {
     const lc = this.lightCanvas, l = lc.getContext('2d');
     l.globalCompositeOperation = 'source-over';
     l.clearRect(0, 0, v.w, v.h);
-    l.fillStyle = this.level.theme.ambient;
-    l.globalAlpha = this.level.theme.dark;
+    l.fillStyle = this.themeObj().ambient;
+    l.globalAlpha = this.themeObj().dark * (this.area === 'world' ? 0.55 : 1);
     l.fillRect(0, 0, v.w, v.h);
     l.globalAlpha = 1;
     l.globalCompositeOperation = 'destination-out';

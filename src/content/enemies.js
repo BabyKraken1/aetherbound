@@ -83,6 +83,18 @@ export const ROSTERS = {
     charger: { name: 'Quartz Ram' },
     minion: { name: 'Glimmer' },
   },
+  frost: {
+    pal: 'frost',
+    chaser: { name: 'Frostling', twist: 'deathBurst' },
+    shooter: { name: 'Rime Spitter', twist: 'burst3' },
+    flanker: { name: 'Snow Wraith' },
+    brute: { name: 'Glacier Golem', twist: 'deathBurst' },
+    lobber: { name: 'Hailcap' },
+    summoner: { name: 'Frost Seer' },
+    turret: { name: 'Ice Spire' },
+    charger: { name: 'Tundra Ram' },
+    minion: { name: 'Snowflake' },
+  },
 };
 
 // Elite modifiers applied on top of an archetype

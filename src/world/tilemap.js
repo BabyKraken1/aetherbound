@@ -27,6 +27,7 @@ export class TileMap {
   isShotSolid(x, y) {
     const v = this.get(x, y);
     if (v === T.WATER) return false;
+    if (v === T.PILLAR && this.shotsPassProps) return false; // open-world trees/crystals don't eat shots
     return this.isSolid(x, y);
   }
   isSolidAt(px, py) { return this.isSolid(Math.floor(px / TILE), Math.floor(py / TILE)); }

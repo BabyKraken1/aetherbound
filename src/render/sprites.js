@@ -1,3 +1,4 @@
+import { SKINS } from '../content/skins.js';
 // Procedural pixel-art sprites.
 //
 // Each sprite is painted onto a tiny pixel grid by a painter function, then "baked": an automatic
@@ -93,6 +94,7 @@ export const PAL = {
   moss:   { a: '#6dbb4f', b: '#3f7f3a', c: '#24401f', d: '#d4ec7a', e: '#ff5d73', eye: '#fff3b0', acc: '#8a5a32', acc2: '#5e3b22' },
   cinder: { a: '#ff7a3a', b: '#b23a2a', c: '#3b1616', d: '#ffd36b', e: '#ffe14d', eye: '#fff6c2', acc: '#4a3434', acc2: '#2a1e1e' },
   prism:  { a: '#7ae0ff', b: '#4f7bd8', c: '#221f55', d: '#effbff', e: '#ff7ae6', eye: '#ffffff', acc: '#9a6cff', acc2: '#5a3fb0' },
+  frost:  { a: '#cfeaff', b: '#6fa8d8', c: '#1e2f4f', d: '#ffffff', e: '#3fd0ff', eye: '#ffffff', acc: '#8fa3b8', acc2: '#4f6378' },
 };
 
 const HERO = {
@@ -105,8 +107,8 @@ const HERO = {
 
 // ───────────────────────── painters ─────────────────────────
 // Heroes: 16x20, feet at y=18. frames: 0 idle, 1 idle-breathe, 2 walk-a, 3 walk-b
-function paintHero(p, k, f) {
-  const C = HERO[k];
+function paintHero(p, k, f, override) {
+  const C = override ? { ...HERO[k], ...override } : HERO[k];
   const b = f === 1 ? 1 : 0;
   const robe = k === 'arcanist' || k === 'warden';
   const leg = (x, up) => { p.rect(x, 15 - up, 2, 3, C.leg); p.rect(x, 17 - up, 2, 1, C.boot); };
@@ -256,6 +258,30 @@ function paintLumen(p, P, f, s = 1) {
   p.circ(cx, top + H * 0.42, (f ? 2.5 : 1.8) * s, '#ffffff');
 }
 
+function paintGlacius(p, P, f) {
+  const sway = f ? 1 : 0;
+  // flowing robe of ice
+  for (let y = 18; y < 42; y++) {
+    const hw = 6 + (y - 18) * 0.5;
+    for (let x = -hw; x <= hw; x++) p.px(20 + x + (y > 34 ? sway : 0), y, x < -hw / 3 ? P.b : x > hw / 3 ? '#a8cfee' : P.a);
+  }
+  p.line(20, 20, 20, 41, P.d);
+  // arms raised, conducting the choir
+  p.line(13, 22, 5, 12 - sway, P.a); p.line(14, 23, 6, 13 - sway, P.b);
+  p.line(27, 22, 35, 12 + sway, P.a); p.line(26, 23, 34, 13 + sway, P.b);
+  p.circ(5, 11 - sway, 2, P.e); p.circ(35, 11 + sway, 2, P.e);
+  // head + icicle crown
+  p.circ(20, 14, 5, '#e8f6ff'); p.rect(17, 13, 2, 2, P.e); p.rect(22, 13, 2, 2, P.e); p.rect(18, 17, 5, 1, P.b);
+  for (const [x, h] of [[14, 5], [16, 8], [18, 10], [20, 12], [22, 10], [24, 8], [26, 5]]) p.line(x, 9, x, 9 - h * 0.7, x === 20 ? P.e : P.d);
+  p.px(20, 1 + sway, '#ffffff');
+}
+function paintIceTree(p) {
+  p.rect(10, 22, 4, 7, '#5c4632'); p.rect(12, 22, 2, 7, '#3a2b20');
+  const layers = [[12, 4, 4], [12, 9, 7], [12, 15, 9], [12, 20, 11]];
+  for (const [cx, cy, w] of layers) for (let y = 0; y < 5; y++) for (let x = -w + y; x <= w - y; x++) p.px(cx + x, cy + y - 2, y < 2 ? '#ffffff' : '#3f6f6a');
+  p.px(12, 0, '#ffffff'); p.px(9, 12, '#e8f6ff'); p.px(15, 17, '#e8f6ff');
+}
+
 // Props / NPCs
 function paintDummy(p, P, f) {
   p.rect(7, 10, 2, 10, '#7a5230');
@@ -308,6 +334,10 @@ function paintPillar(theme) {
     } else if (theme === 'cinder') {
       p.rect(2, 4, 12, 20, '#2e2328'); p.rect(10, 4, 4, 20, '#1e1416'); p.rect(1, 1, 14, 4, '#45313a'); p.rect(1, 22, 14, 3, '#1e1416');
       p.line(6, 6, 8, 12, '#ff7a1a'); p.line(8, 12, 6, 18, '#ff7a1a'); p.px(7, 9, '#ffd36b');
+    } else if (theme === 'frost') {
+      p.ell(8, 22, 7, 3, '#4f6378');
+      p.rect(4, 6, 8, 17, '#bfe9ff'); p.rect(9, 6, 3, 17, '#6fa8d8'); p.rect(5, 2, 6, 4, '#e8f6ff'); p.rect(7, 0, 2, 2, '#ffffff');
+      p.line(6, 8, 6, 20, '#ffffff'); p.rect(2, 16, 3, 6, '#9fd8ff'); p.rect(12, 14, 3, 8, '#9fd8ff');
     } else {
       p.ell(8, 22, 7, 3, '#3b3470');
       p.rect(5, 4, 6, 19, '#7ae0ff'); p.rect(8, 4, 3, 19, '#4f7bd8'); p.rect(6, 1, 4, 3, '#7ae0ff'); p.px(7, 0, '#effbff');
@@ -362,6 +392,10 @@ export function buildSprites() {
   built = true;
   for (const k of ['vanguard', 'arcanist', 'ranger', 'warden', 'vendor'])
     define('hero_' + k, 16, 20, 4, (p, P, f) => paintHero(p, k, f), null, [8, 18]);
+  for (const [cls, list] of Object.entries(SKINS))
+    for (const skin of list) if (skin.pal) define(`hero_${cls}_${skin.id}`, 16, 20, 4, (p, P, f) => paintHero(p, cls, f, skin.pal), null, [8, 18]);
+  define('glacius', 41, 44, 2, paintGlacius, PAL.frost, [20, 42]);
+  define('icetree', 24, 30, 1, paintIceTree, null, [12, 28]);
   for (const [pal, P] of Object.entries(PAL))
     for (const [name, [w, h, fn]] of Object.entries(ENEMY_PAINTERS)) define(`${name}_${pal}`, w, h, 2, fn, P);
   define('lumenClone', 20, 24, 2, paintClone, PAL.prism);
@@ -380,7 +414,7 @@ export function buildSprites() {
   define('lamp', 8, 25, 2, paintLamp, null, [4, 24]);
   define('board', 16, 19, 1, paintBoard, null, [8, 17]);
   define('chest', 16, 14, 2, paintChest, null, [8, 12]);
-  for (const t of ['moss', 'cinder', 'prism']) define('pillar_' + t, 16, 26, 1, paintPillar(t), null, [8, 22]);
+  for (const t of ['moss', 'cinder', 'prism', 'frost']) define('pillar_' + t, 16, 26, 1, paintPillar(t), null, [8, 22]);
 }
 
 export function sprite(name) { return SPRITES[name]; }
@@ -419,6 +453,7 @@ const STYLE_COL = {
   steel: ['#c9d1e0', '#8e97a8'], moss: ['#6dbb4f', '#3f7f3a'], fire: ['#ff7a3a', '#ffd36b'], crystal: ['#7ae0ff', '#b46cff'],
   gold: ['#ffd36b', '#ffa630'], arcane: ['#7a9cff', '#c9d6ff'], nature: ['#6dbb4f', '#d4ec7a'], arrow: ['#c9a35a', '#e8e8f0'],
   firearrow: ['#ff7a3a', '#ffd36b'], crystalarrow: ['#7ae0ff', '#effbff'], spirit: ['#b46cff', '#7ae0ff'],
+  ice: ['#bfe9ff', '#ffffff'], icearrow: ['#9fd8ff', '#ffffff'], orb: ['#b46cff', '#ffffff'],
 };
 export function itemIcon(base, rarityColor) {
   const key = base.id;

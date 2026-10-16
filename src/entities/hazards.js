@@ -8,7 +8,7 @@ export function makeHazard(type, o) { return { id: nextId++, type, t: 0, dead: f
 
 const STYLE_COL = {
   root: ['#ff4f7a', '#8a5a32', '#6dbb4f'], magma: ['#ff6a1a', '#ffd36b', '#3b1616'], prism: ['#ff7ae6', '#7ae0ff', '#ffffff'],
-  slam: ['#ff4f7a', '#c9d1e0', '#8e889b'], lob: ['#ff4f7a', '#ffd36b', '#ffffff'], leap: ['#ffd36b', '#ffffff', '#c9d1e0'],
+  slam: ['#ff4f7a', '#c9d1e0', '#8e889b'], ice: ['#3fd0ff', '#ffffff', '#bfe9ff'], lob: ['#ff4f7a', '#ffd36b', '#ffffff'], leap: ['#ffd36b', '#ffffff', '#c9d1e0'],
 };
 
 export function updateHazard(h, dt, g) {

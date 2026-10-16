@@ -110,7 +110,7 @@ export class Player {
       this.trailT -= dt;
       if (this.trailT <= 0) {
         this.trailT = 0.04;
-        g.fx.ghost(this.x, this.y, 'hero_' + this.cls, 2, this.flip, 0.2);
+        g.fx.ghost(this.x, this.y, this.spriteName || 'hero_' + this.cls, 2, this.flip, 0.2);
         if (s.effects.has('emberTrail')) g.hazards.push(makeHazard('pool', { x: this.x, y: this.y, r: 9, life: 2.5, dps: 18 + s.ap, friendly: true }));
       }
     } else {
@@ -220,7 +220,7 @@ export class Player {
     const wsp = weaponSprite(this.cls, w.style);
     const behind = Math.sin(this.aim) < -0.3;
     if (behind) this.drawWeapon(ctx, wsp, y);
-    drawSprite(ctx, 'hero_' + this.cls, frame, this.x, y, { flip: this.flip, flash: blink, alpha: this.dodgeT > 0 ? 0.75 : 1 });
+    drawSprite(ctx, this.spriteName || 'hero_' + this.cls, frame, this.x, y, { flip: this.flip, flash: blink, alpha: this.dodgeT > 0 ? 0.75 : 1 });
     if (!behind) this.drawWeapon(ctx, wsp, y);
     if (this.barrier) {
       const k = this.barrier.amt / this.barrier.max;

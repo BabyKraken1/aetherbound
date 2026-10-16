@@ -13,8 +13,10 @@ import { REGIONS } from '../src/content/regions.js';
 import { CLASSES, CLASS_ORDER } from '../src/content/classes.js';
 import { ITEMS, getBase } from '../src/content/items.js';
 import { ARCHETYPES, ROSTERS } from '../src/content/enemies.js';
-import { BOSSES } from '../src/content/bosses.js';
+import { BOSSES, MINIBOSSES, ALL_BOSSES, PATTERNS } from '../src/content/bosses.js';
 import { T } from '../src/config.js';
+import { generateWorld } from '../src/world/overworld.js';
+import { SKINS, skinUnlocked } from '../src/content/skins.js';
 
 let passed = 0, failed = 0;
 function test(name, fn) {
@@ -45,9 +47,11 @@ test('8+ enemy archetypes, rosters cover all', () => {
   assert.ok(roles.length >= 8);
   for (const r of Object.values(ROSTERS)) for (const k of Object.keys(ARCHETYPES)) assert.ok(r[k]?.name, k);
 });
-test('3 bosses with 2 phases and signature loot', () => {
-  assert.equal(Object.keys(BOSSES).length, 3);
-  for (const [id, b] of Object.entries(BOSSES)) {
+test('4 bosses + 4 mini-bosses, 2 phases each, own legendary loot', () => {
+  assert.equal(Object.keys(BOSSES).length, 4);
+  assert.equal(Object.keys(MINIBOSSES).length, 4);
+  for (const id of Object.keys(MINIBOSSES)) assert.ok(ITEMS.some((i) => i.boss === id && i.mythic), 'mythic for ' + id);
+  for (const [id, b] of Object.entries(ALL_BOSSES)) {
     assert.ok(b.phases.length >= 2, id);
     assert.ok(ITEMS.some((i) => i.boss === id), 'loot for ' + id);
   }
@@ -152,13 +156,28 @@ test('region 0 never drops later-region gear', () => {
   for (let i = 0; i < 1000; i++)
     for (const it of rollChest(rng, { region: 0 }).items) assert.ok(getBase(it.base).region <= 0, it.base);
 });
-test('boss: signature guaranteed on first kill, pity guarantees later', () => {
+test('boss legendaries are rare but pity guarantees one', () => {
   const rng = new RNG(4);
-  const first = rollBossDrop(rng, { bossId: 'bramblemaw', region: 0, firstKill: true, pity: 0 });
-  assert.ok(first.items.some((i) => getBase(i.base).boss === 'bramblemaw'));
-  const pity = rollBossDrop(rng, { bossId: 'kragmor', region: 1, firstKill: false, pity: 4 });
+  let got = 0;
+  for (let i = 0; i < 2000; i++) if (rollBossDrop(rng, { bossId: 'bramblemaw', region: 0, pity: 0 }).items.some((it) => getBase(it.base).boss === 'bramblemaw')) got++;
+  assert.ok(got > 250 && got < 500, 'signature rate ' + got / 2000);
+  const pity = rollBossDrop(rng, { bossId: 'kragmor', region: 1, pity: 6 });
   assert.ok(pity.items.some((i) => getBase(i.base).boss === 'kragmor'));
   assert.equal(pity.pity, 0);
+});
+test('mythics drop in normal mode, more often in heroic, and mini-bosses drop their own', () => {
+  const rng = new RNG(8);
+  const rate = (o) => { let n = 0; for (let i = 0; i < 20000; i++) if (rollBossDrop(rng, o).items.some((it) => getBase(it.base).mythic)) n++; return n / 20000; };
+  const normal = rate({ bossId: 'lumen', region: 2, mythicChance: 0.015 });
+  const heroic = rate({ bossId: 'lumen', region: 2, heroic: true, mythicChance: 0.05 });
+  assert.ok(normal > 0.008 && normal < 0.025, 'normal ' + normal);
+  assert.ok(heroic > normal * 2, 'heroic ' + heroic);
+  let own = 0;
+  for (let i = 0; i < 5000; i++) for (const it of rollBossDrop(rng, { bossId: 'gnarl', region: 0, mythicChance: 1 }).items) if (it.base === 'seed_of_eternity') own++;
+  assert.ok(own > 2000);
+});
+test('every boss pattern name exists', () => {
+  for (const b of Object.values(ALL_BOSSES)) for (const ph of b.phases) for (const p of ph.patterns) assert.ok(PATTERNS[p], p);
 });
 test('rarity bump shifts distribution upward', () => {
   const rng = new RNG(5);
@@ -234,6 +253,35 @@ test('hub: every NPC and portal is reachable from spawn', () => {
     assert.ok(ok, n.kind + ' unreachable');
   }
   assert.equal(hub.map.get(hub.spawn.tx, hub.spawn.ty) !== T.WALL, true);
+});
+
+test('open world: town, roads, every biome and lair reachable (20 seeds)', () => {
+  for (let seed = 1; seed <= 20; seed++) {
+    const w = generateWorld(seed * 7919);
+    const seen = floodReachable(w.map, w.spawn.tx, w.spawn.ty);
+    const perBiome = [0, 0, 0, 0, 0];
+    for (let i = 0; i < w.map.t.length; i++) if (seen[i]) perBiome[w.map.biome[i]]++;
+    for (let b = 0; b < 4; b++) assert.ok(perBiome[b] > 2000, `seed ${seed} biome ${b} only ${perBiome[b]} tiles`);
+    assert.equal(w.lairs.length, 4, `seed ${seed} lairs`);
+    for (const l of w.lairs) assert.ok(seen[w.map.idx(l.tx, l.ty)], `seed ${seed} lair ${l.bossId} unreachable`);
+    for (const n of w.npcs) {
+      let ok = false;
+      for (let dy = -2; dy <= 2; dy++) for (let dx = -2; dx <= 2; dx++) if (seen[w.map.idx(Math.floor(n.tx) + dx, Math.floor(n.ty) + dy)]) ok = true;
+      assert.ok(ok, `seed ${seed} ${n.kind} unreachable`);
+    }
+  }
+});
+test('every skin palette and unlock rule is valid', () => {
+  const save = defaultSave();
+  for (const [cls, list] of Object.entries(SKINS)) {
+    assert.equal(list[0].id, 'default');
+    assert.ok(skinUnlocked(save, cls, list[0]));
+    for (const sk of list.slice(1)) { assert.ok(sk.pal && sk.unlock, cls + sk.id); assert.equal(skinUnlocked(save, cls, sk), false, cls + ' ' + sk.id + ' should start locked'); }
+  }
+  save.classes.vanguard.level = 10;
+  assert.ok(skinUnlocked(save, 'vanguard', SKINS.vanguard[1]));
+  save.discovered.push('riftheart');
+  assert.ok(skinUnlocked(save, 'arcanist', SKINS.arcanist[2]));
 });
 
 console.log(`\n${passed} passed, ${failed} failed`);

@@ -5,11 +5,11 @@ import { uid } from '../util.js';
 
 // Base rarity weights by source. Index matches RARITIES.
 const RARITY_WEIGHTS = {
-  enemy:  [60, 28, 10, 2, 0, 0],
-  elite:  [10, 40, 35, 13, 2, 0],
-  chest:  [15, 40, 30, 12, 3, 0],
-  secret: [0, 20, 45, 28, 7, 0],
-  boss:   [0, 10, 40, 35, 15, 0],
+  enemy:  [62, 28, 9, 1, 0, 0],
+  elite:  [12, 44, 34, 9, 1, 0],
+  chest:  [18, 42, 30, 9, 1, 0],
+  secret: [0, 24, 46, 26, 4, 0],
+  boss:   [0, 16, 46, 32, 6, 0],
 };
 
 export function rollRarity(rng, source, bump = 0) {
@@ -73,17 +73,17 @@ export function rollChest(rng, ctx) {
   return out;
 }
 
-// Boss drops. Guarantees the boss's signature item on first kill, then uses a pity counter
-// so legendaries are guaranteed within a few kills even with bad luck.
-// ctx: {bossId, region, firstKill, pity, heroic, mythicChance}
+// Boss drops. Signature legendaries are rare, but a pity counter guarantees one after a few
+// unlucky kills. Mythics can drop anywhere a boss dies; Heroic dungeons raise every chance.
+// ctx: {bossId, region, pity, heroic, mythicChance}
+export const SIGNATURE_CHANCE = 0.18, SIGNATURE_PITY_STEP = 0.1, SIGNATURE_PITY_MAX = 6, HEROIC_SIGNATURE_BONUS = 0.15;
+
 export function rollBossDrop(rng, ctx) {
   const out = { items: [], gold: rng.int(40, 70) * (ctx.region + 1), pity: ctx.pity || 0 };
-  const signature = ITEMS.filter((b) => b.boss === ctx.bossId);
+  const signature = ITEMS.filter((b) => b.boss === ctx.bossId && !b.mythic);
   let gotLegendary = false;
-  if (ctx.firstKill && signature.length) {
-    out.items.push(makeItem(rng.pick(signature).id, rng));
-    gotLegendary = true;
-  } else if (signature.length && (rng.chance(0.25 + 0.15 * out.pity) || out.pity >= 4)) {
+  const chance = SIGNATURE_CHANCE + SIGNATURE_PITY_STEP * out.pity + (ctx.heroic ? HEROIC_SIGNATURE_BONUS : 0);
+  if (signature.length && (rng.chance(chance) || out.pity >= SIGNATURE_PITY_MAX)) {
     out.items.push(makeItem(rng.pick(signature).id, rng));
     gotLegendary = true;
   }
@@ -92,8 +92,12 @@ export function rollBossDrop(rng, ctx) {
     const it = rollEquipment(rng, ctx.region, rollRarity(rng, 'boss', ctx.heroic ? 1 : 0));
     if (it) out.items.push(it);
   }
-  const mythics = ITEMS.filter((b) => b.mythic);
-  if (mythics.length && rng.chance(ctx.mythicChance ?? 0.02)) out.items.push(makeItem(rng.pick(mythics).id, rng));
+  // mythics: the boss's own mythic (mini-bosses) plus the shared pool
+  const mythics = ITEMS.filter((b) => b.mythic && (b.boss === 'any' || b.boss === ctx.bossId));
+  if (mythics.length && rng.chance(ctx.mythicChance ?? 0.015)) {
+    const own = mythics.filter((b) => b.boss === ctx.bossId);
+    out.items.push(makeItem(rng.pick(own.length && rng.chance(0.6) ? own : mythics).id, rng));
+  }
   out.items.push(makeItem('hp_potion', rng, 2));
   out.pity = gotLegendary ? 0 : out.pity + 1;
   return out;

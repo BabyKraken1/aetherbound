@@ -12,7 +12,9 @@ export const newEntityId = () => nextId++;
 export class Enemy {
   constructor(g, kind, x, y, opts = {}) {
     const arch = ARCHETYPES[kind];
-    const roster = ROSTERS[g.regionDef.id];
+    const regionDef = opts.region || g.regionDef;
+    this.regionIndex = regionDef.index;
+    const roster = ROSTERS[regionDef.id];
     const variant = roster[kind];
     this.id = newEntityId();
     this.kind = kind;
@@ -23,18 +25,18 @@ export class Enemy {
     this.twist = variant.twist;
     this.pal = roster.pal;
     this.sprite = `${arch.sprite}_${roster.pal}`;
-    const tm = g.tierMult;
+    const tm = opts.tier || g.tierMult;
     const hpMul = tm.hp * (this.elite ? ELITE.hp : 1) * (this.miniboss ? 7 : 1);
     this.maxHp = this.hp = Math.round(arch.hp * hpMul);
     this.dmgMul = tm.dmg * (this.elite ? ELITE.dmg : 1) * (this.miniboss ? 1.25 : 1);
-    this.def = Math.round(arch.def * (1 + g.regionDef.index * 0.6));
+    this.def = Math.round(arch.def * (1 + regionDef.index * 0.6));
     this.speed = arch.speed * (this.elite ? ELITE.speed : 1);
     this.scale = this.miniboss ? 1.7 : this.elite ? ELITE.scale : 1;
     this.r = arch.r * this.scale;
     this.h = (sprite(this.sprite)?.h || 14) * this.scale * 0.8;
     this.fly = !!arch.fly;
     this.knockResist = this.miniboss ? 0.95 : arch.knockResist || 0;
-    this.xp = Math.round(arch.xp * (this.elite ? ELITE.xp : 1) * (this.miniboss ? 10 : 1) * (1 + g.regionDef.index * 0.8));
+    this.xp = Math.round(arch.xp * (this.elite ? ELITE.xp : 1) * (this.miniboss ? 10 : 1) * (1 + regionDef.index * 0.8));
     this.attacks = arch.attacks.map((a) => {
       const b = { ...a };
       if (this.twist === 'burst3' && b.type === 'shot') { b.type = 'burst'; b.count = 3; b.interval = 0.13; }
@@ -224,7 +226,7 @@ export class Enemy {
         const tx = pl.x + pl.vx * lead, ty = pl.y + pl.vy * lead;
         g.hazards.push(makeHazard('telegraph', {
           x: tx, y: ty, r: a.radius * (this.elite ? 1.3 : 1), warn: a.flight, dmg: Math.round(a.dmg * this.dmgMul), owner: this.name,
-          style: this.pal === 'cinder' ? 'magma' : 'lob', pool: this.pal === 'cinder' ? a.pool + 1 : this.pal === 'moss' ? 0 : a.pool * 0.6,
+          style: this.pal === 'cinder' ? 'magma' : this.pal === 'frost' ? 'ice' : 'lob', pool: this.pal === 'cinder' ? a.pool + 1 : this.pal === 'moss' ? 0 : a.pool * 0.6,
         }));
         g.projectiles.spawn({ x: this.x, y: this.cy, vx: (tx - this.x) / a.flight, vy: (ty - this.cy) / a.flight, life: a.flight, ghost: true, size: 3, style: this.pal === 'cinder' ? 'magma' : 'enemy', friendly: false, dmg: 0 }).noHit = true;
         break;
@@ -255,7 +257,7 @@ export class Enemy {
     g.projectiles.spawn({
       x: this.x, y: this.cy, vx: Math.cos(angle) * a.speed, vy: Math.sin(angle) * a.speed,
       size: a.size || 3, dmg: Math.round(a.dmg * this.dmgMul), friendly: false, life: (a.range + 60) / a.speed,
-      style: this.pal === 'moss' ? 'thorn' : this.pal === 'cinder' ? 'fire' : 'shard', owner: this.name,
+      style: { moss: 'thorn', cinder: 'fire', prism: 'shard', frost: 'ice' }[this.pal], owner: this.name,
     });
     g.audio.play('enemyShoot');
   }

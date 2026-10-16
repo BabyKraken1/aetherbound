@@ -35,6 +35,11 @@ export function defaultSave() {
     settings: { ...DEFAULT_SETTINGS },
     tutorialDone: false,
     stats: { kills: 0, deaths: 0, runs: 0, clears: 0, playTime: 0 },
+    discovered: [],          // every item base id ever picked up (for the index)
+    skinsOwned: [],          // purchased skins as "class:skinId"
+    selectedSkins: {},       // class -> skin id
+    minibossesDefeated: [],
+    worldSeed: Math.floor(Math.random() * 1e9),
   };
 }
 
@@ -60,7 +65,7 @@ export function validateSave(raw) {
   const s = d;
   s.created = num(raw.created, d.created);
   s.gold = clampInt(raw.gold, 0, 1e7, d.gold);
-  s.regionsUnlocked = clampInt(raw.regionsUnlocked, 1, 3, 1);
+  s.regionsUnlocked = clampInt(raw.regionsUnlocked, 1, 4, 1);
   s.heroicUnlocked = !!raw.heroicUnlocked;
   s.pity = clampInt(raw.pity, 0, 50, 0);
   s.tutorialDone = !!raw.tutorialDone;
@@ -103,6 +108,16 @@ export function validateSave(raw) {
     for (const k of ['master', 'sfx', 'music']) s.settings[k] = Math.min(1, Math.max(0, num(raw.settings[k], DEFAULT_SETTINGS[k])));
     for (const k of ['shake', 'damageNumbers']) s.settings[k] = typeof raw.settings[k] === 'boolean' ? raw.settings[k] : DEFAULT_SETTINGS[k];
   }
+  const strList = (v) => (Array.isArray(v) ? [...new Set(v.filter((x) => typeof x === 'string'))] : []);
+  s.discovered = strList(raw.discovered).filter((id) => getBase(id));
+  s.skinsOwned = strList(raw.skinsOwned);
+  s.minibossesDefeated = strList(raw.minibossesDefeated);
+  if (raw.selectedSkins && typeof raw.selectedSkins === 'object')
+    for (const c of CLASS_ORDER) if (typeof raw.selectedSkins[c] === 'string') s.selectedSkins[c] = raw.selectedSkins[c];
+  s.worldSeed = clampInt(raw.worldSeed, 0, 1e9, s.worldSeed);
+  // older saves: everything already in the bag/equipped counts as discovered
+  for (const it of s.inventory) if (it && !s.discovered.includes(it.base)) s.discovered.push(it.base);
+  for (const c of CLASS_ORDER) for (const it of Object.values(s.classes[c].equip)) if (it && !s.discovered.includes(it.base)) s.discovered.push(it.base);
   if (raw.stats && typeof raw.stats === 'object') {
     for (const k of Object.keys(s.stats)) s.stats[k] = clampInt(raw.stats[k], 0, 1e9, 0);
   }

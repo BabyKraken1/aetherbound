@@ -4,7 +4,7 @@ A pixel-art action RPG for the browser, inspired by the feel of Pixel Quest, Rea
 
 **Play it:** https://babykraken1.github.io/aetherbound/
 
-Pick a class in Emberlight Haven, step through a portal, and fight through randomly generated dungeons. Collect loot, level up, and beat the three region bosses: Bramblemaw, Kragmor and Lumen.
+It's an open world. Emberlight Haven sits in the middle, and the land gets more dangerous the farther you travel: Mossveil Wilds, then Cinder Depths, Prism Hollow, and finally Frostspire Peaks. Enemies roam each biome. Any kill can open a temporary dungeon portal, and each biome has a mini-boss lair. Dungeons lead to the four bosses: Bramblemaw, Kragmor, Lumen and Glacius.
 
 ## Controls
 
@@ -20,10 +20,23 @@ Pick a class in Emberlight Haven, step through a portal, and fight through rando
 | F | Interact (portals, chests, NPCs, shrines) |
 | 1 / 2 | Health / mana potion |
 | I / Tab | Inventory (double-click an item to equip or use it) |
+| Click a hotbar slot | Equip that item or drink that potion |
+| K | Item Index (Legendaries; Mythics show as ? until found) |
+| \` (backtick) | Admin panel: give any item, spawn any boss, cheats |
 | M | Toggle minimap |
 | Esc | Pause / close menus |
 
 ## What's in it
+
+- **Open world:** a 232×232-tile map with four biome rings, roads out of town, lakes, lava rivers, rift cracks and frozen forests. Enemy packs spawn around you according to the biome you're in.
+- **Mini-bosses:** Old Gnarl, Pyrewing, Geode Tyrant and Rimefang guard lairs (red dots on the minimap). Each drops its own Legendary and Mythic, and each respawns 2 minutes after it dies.
+- **Dungeon portals:** any kill can open one (elites and mini-bosses more often), and it lasts 60 seconds. Heroic portals appear once Heroic mode is unlocked. Leaving a dungeon puts you back where you entered.
+- **Drop pop-ups:** Legendary and Mythic drops get a big announcement. Mythics also flash the screen.
+- **Rarer loot:** Legendaries and Mythics are rare. Mythics can drop from any boss in normal mode, and Heroic dungeons raise every chance. Bad-luck protection still guarantees a boss's legendary eventually.
+- **Item Index (K):** tracks every Legendary and Mythic you've found.
+- **Skins:** 4 per class. They unlock by leveling, beating bosses, defeating every mini-boss, finding a Mythic, discovering Legendaries, or buying them. Change skins in the Wardrobe (pause menu or class shrine).
+- **Hotbar:** the bottom bar shows your equipped gear and the first 8 bag slots, with small ability cooldown icons above it.
+- **Admin panel:** press \` to give yourself any item, spawn any boss or mini-boss, or toggle god mode.
 
 - **4 classes**, each with its own weapon type, 3 abilities and separate level (max 20):
   - **Vanguard:** sword arcs, barrier, whirlwind, leap slam
@@ -37,7 +50,7 @@ Pick a class in Emberlight Haven, step through a portal, and fight through rando
   - **Prism Hollow:** darkness and rift cracks; shardlings explode into shards
 - **Procedural dungeons**, built from room types: combat rooms that seal their doors until cleared, an elite Warlord room, a treasure room, a healing spring, an optional 3-wave trial, a secret room behind a breakable cracked wall, and the boss arena. The layout is regenerated every run and checked for connectivity.
 - **8 enemy behaviors:** chaser, shooter, flanker, armored brute, lobber, summoner, turret and charger. There are also summoned minions, elite variants and Warlord mini-bosses. Every attack is telegraphed: enemies flash before attacking, and red markers show where ground attacks will land.
-- **3 bosses**, each with 2 phases, an intro, a death sequence and a signature move:
+- **4 bosses**, each with 2 phases. Glacius (Frostspire Peaks) is the newest: walls of ice sweep the arena, leaving one safe gap, an intro, a death sequence and a signature move:
   - **Bramblemaw:** Root Eruption, and thorn rings with a moving safe gap
   - **Kragmor:** molten charges that leave lava rivers
   - **Lumen:** rotating prism beams and mirror clones

@@ -11,6 +11,9 @@ import { sellPrice, buyPrice, makeItem } from '../systems/loot.js';
 import { itemIcon, abilityIcon, toURL, drawSprite, goldIcon } from '../render/sprites.js';
 import { formatTime, RNG } from '../util.js';
 import { renderInventory, renderItemDetail } from './inventory.js';
+import { indexHtml, wardrobeHtml, drawSkinPreviews, adminHtml, adminRows, lootPopupHtml, hotbarHtml, hotbarSignature } from './extra.js';
+import { SKINS, skinUnlocked, skinSpriteName } from '../content/skins.js';
+import { THEME_IDS } from '../world/overworld.js';
 
 const $ = (sel, root = document) => root.querySelector(sel);
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -30,6 +33,7 @@ export class UI {
       objective: $('#hud-objective', root), minimap: $('#minimap', root), actions: $('#actionbar', root), prompt: $('#prompt', root),
       toasts: $('#toasts', root), banner: $('#banner', root), boss: $('#bossbar', root), bossFill: $('#boss-fill', root), bossName: $('#boss-name', root),
       tutorial: $('#tutorial', root), hurt: $('#hurt', root), roomInfo: $('#room-info', root), overlay: $('#overlay', root),
+      popup: $('#loot-popup', root), flash: $('#mythic-flash', root),
     };
     this.buildActionBar();
     root.addEventListener('click', (e) => {
@@ -45,6 +49,8 @@ export class UI {
     root.addEventListener('input', (e) => {
       const el = e.target.closest('[data-setting]');
       if (el) this.setSetting(el.dataset.setting, el.type === 'checkbox' ? el.checked : Number(el.value) / 100);
+      const search = e.target.closest('[data-admin-search]');
+      if (search) { this.adminFilter = search.value; const list = $('#adm-list', this.el.overlay); if (list) list.innerHTML = adminRows(search.value); }
     });
     root.addEventListener('mouseover', (e) => {
       const b = e.target.closest('.btn, .card, .slot');
@@ -101,7 +107,7 @@ export class UI {
       const s = computeStats(c, cs.level, cs.equip);
       const abil = c.abilities.map((a, i) => `<div class="abil"><img src="${toURL(abilityIcon(a.id))}"><span><b>[${a.key}] ${a.name}</b>${i === 2 ? ` <i>Lv ${ABILITY3_LEVEL}</i>` : ''}<br>${esc(a.desc.replace(/ \(Lv \d+\)/, ''))}</span></div>`).join('');
       return `<div class="card ${unlocked ? '' : 'locked'} ${save.currentClass === id ? 'current' : ''}" ${unlocked ? `data-act="pickClass" data-cls="${id}"` : ''} style="--accent:${c.color}">
-        <canvas class="preview" data-preview="${id}" width="32" height="28"></canvas>
+        <canvas class="preview" data-preview="${skinSpriteName(id, save.selectedSkins[id])}" width="32" height="28"></canvas>
         <h3>${c.name}</h3><div class="role">${c.role} &middot; Lv ${cs.level}</div>
         <p>${esc(c.desc)}</p>
         <div class="statline"><span>HP</span><div class="mini"><i style="width:${Math.min(100, s.maxHp / 2)}%;background:#ff4f5e"></i></div><span>${s.maxHp}</span></div>
@@ -115,7 +121,7 @@ export class UI {
         <h2>${isNew ? 'Choose your hero' : 'Shrine of Echoes'}</h2>
         <div class="sub">${isNew ? 'You can switch class at any time from the shrine in town. Each class levels up separately.' : 'Each class keeps its own level and equipment. Your bag and gold are shared.'}</div>
         <div class="cards">${cards}</div>
-        ${isNew ? '<button class="btn" data-act="toTitle">Back</button>' : '<button class="btn" data-act="close">Close</button>'}
+        <div class="menu row">${isNew ? '<button class="btn" data-act="toTitle">Back</button>' : '<button class="btn" data-act="wardrobe">Wardrobe (skins)</button><button class="btn" data-act="close">Close</button>'}</div>
       </div>`);
     this.classSelectNew = isNew;
     this.startPreviews();
@@ -130,13 +136,31 @@ export class UI {
         const x = c.getContext('2d');
         x.imageSmoothingEnabled = false;
         x.clearRect(0, 0, c.width, c.height);
-        drawSprite(x, 'hero_' + c.dataset.preview, 2 + (Math.floor(f / 4) % 2), 16, 25);
+        drawSprite(x, c.dataset.preview, 2 + (Math.floor(f / 4) % 2), 16, 25);
       });
     };
     draw();
     this.previewTimer = setInterval(draw, 60);
   }
   stopPreviews() { if (this.previewTimer) clearInterval(this.previewTimer); this.previewTimer = null; }
+
+  showIndex(g) { this.showOverlay(indexHtml(g)); }
+  showWardrobe(g) { this.showOverlay(wardrobeHtml(g)); this.previewTimer = drawSkinPreviews(this.el.overlay); }
+  showAdmin(g) {
+    this.showOverlay(adminHtml(g, this.adminFilter || ''));
+    const inp = $('[data-admin-search]', this.el.overlay);
+    if (inp) inp.focus();
+  }
+  lootPopup(base, isNew) {
+    const el = this.el.popup;
+    el.className = 'loot-popup ' + base.rarity;
+    el.innerHTML = lootPopupHtml(base, isNew);
+    void el.offsetWidth;
+    el.classList.add('show');
+    clearTimeout(this.popupT);
+    this.popupT = setTimeout(() => el.classList.remove('show'), base.rarity === 'mythic' ? 4200 : 3000);
+    if (base.rarity === 'mythic') { this.el.flash.classList.remove('go'); void this.el.flash.offsetWidth; this.el.flash.classList.add('go'); }
+  }
 
   showPause(inDungeon) {
     this.showOverlay(`
@@ -145,6 +169,8 @@ export class UI {
         <div class="menu">
           <button class="btn primary" data-act="close">Resume</button>
           <button class="btn" data-act="inventory">Inventory</button>
+          <button class="btn" data-act="index">Item Index</button>
+          <button class="btn" data-act="wardrobe">Wardrobe (skins)</button>
           <button class="btn" data-act="settings">Settings</button>
           <button class="btn" data-act="controls">Controls</button>
           ${inDungeon ? '<button class="btn danger" data-act="confirmAbandon">Abandon run</button>' : ''}
@@ -175,7 +201,7 @@ export class UI {
     const rows = [
       ['W A S D / Arrows', 'Move'], ['Mouse', 'Aim'], ['Left click (hold)', 'Attack'], ['Q / Right click', 'Ability 1'], ['E', 'Ability 2'],
       ['R', `Ability 3 (unlocks at level ${ABILITY3_LEVEL})`], ['Space / Shift', 'Dodge roll (invulnerable)'], ['F', 'Interact (portals, chests, NPCs)'],
-      ['1 / 2', 'Health / Mana potion'], ['I / Tab', 'Inventory'], ['M', 'Toggle minimap'], ['Esc', 'Pause / close menus'],
+      ['1 / 2', 'Health / Mana potion'], ['I / Tab', 'Inventory'], ['Click hotbar item', 'Equip or use it'], ['K', 'Item Index'], ['M', 'Toggle minimap'], ['Esc', 'Pause / close menus'], ['`', 'Admin panel'],
     ];
     this.showOverlay(`
       <div class="panel narrow">
@@ -227,15 +253,19 @@ export class UI {
             <div class="kv"><span>Time played</span><b>${formatTime(s.stats.playTime)}</b></div>
             <div class="kv"><span>Classes unlocked</span><b>${s.unlockedClasses.length} / 4</b></div>
             <div class="kv"><span>Heroic mode</span><b>${s.heroicUnlocked ? 'Unlocked' : 'Defeat Lumen'}</b></div>
+            <div class="kv"><span>Mini-bosses slain</span><b>${s.minibossesDefeated.length} / 4</b></div>
+            <div class="kv"><span>Index</span><b>${s.discovered.filter((id) => ['legendary', 'mythic'].includes(getBase(id)?.rarity)).length} rare finds</b></div>
           </div>
           <div>
             <h4>Adventurer's tips</h4>
             <ul class="tips">
+              <li>The world gets harder the farther you go from town: Mossveil, then Cinder, Prism, and Frostspire.</li>
+              <li>Any kill can open a dungeon portal. Mini-bosses guard lairs in each biome and drop their own Legendaries and Mythics.</li>
               <li>Red shapes on the ground show where attacks will land.</li>
               <li>Dodge rolling makes you briefly invulnerable.</li>
               <li>Cracked walls hide secret rooms. Shoot or slash them.</li>
               <li>Trial altars summon hard waves for a better chest.</li>
-              <li>Bosses always drop their signature legendary the first time. After that, bad luck protection kicks in.</li>
+              <li>Legendaries are rare, but bad-luck protection guarantees a boss's legendary after a few kills. Heroic boosts every chance.</li>
               <li>Each class levels separately. Your bag and gold are shared.</li>
             </ul>
           </div>
@@ -272,7 +302,7 @@ export class UI {
     this.showOverlay(`
       <div class="panel ${victory ? 'victory' : ''}">
         <h2 class="${victory ? 'gold' : 'green'}">${victory ? 'The realm is restored' : 'Dungeon cleared'}</h2>
-        <div class="sub">${victory ? 'Lumen\'s light is mended. The Rift quiets, for now. Heroic mode awaits for those who want more.' : region.name + (run.heroic ? ' (Heroic)' : '')}</div>
+        <div class="sub">${victory ? 'Glacius falls silent and the Riftlands are whole again. Mythics still wait in Heroic dungeons and mini-boss lairs.' : region.name + (run.heroic ? ' (Heroic)' : '')}</div>
         <div class="cols">
           <div>
             <div class="kv"><span>Time</span><b>${formatTime(g.time - run.start)}</b></div>
@@ -284,7 +314,7 @@ export class UI {
           <div><h4>Loot found</h4><div class="lootrow">${icons}</div></div>
         </div>
         ${unlocks ? `<h4>Unlocked</h4><ul class="unlocks">${unlocks}</ul>` : ''}
-        <button class="btn primary" data-act="toHub">Return to Emberlight Haven</button>
+        <button class="btn primary" data-act="toHub">Return to the Riftlands</button>
       </div>`);
   }
 
@@ -469,7 +499,43 @@ export class UI {
       case 'quit': g.quitToTitle(); break;
       case 'enter': g.enterDungeon(Number(data.region), !!data.heroic); break;
       case 'respawn': g.respawnAtHub(); break;
-      case 'toHub': g.closeOverlay(); g.enterHub(); break;
+      case 'toHub': g.closeOverlay(); g.returnToWorld(); break;
+      case 'index': g.closeOverlay(); g.openOverlay('index'); break;
+      case 'wardrobe': g.closeOverlay(); g.openOverlay('wardrobe'); break;
+      case 'pickSkin':
+        g.save.selectedSkins[g.save.currentClass] = data.skin;
+        g.player.spriteName = skinSpriteName(g.save.currentClass, data.skin);
+        g.queueSave();
+        this.showWardrobe(g);
+        break;
+      case 'buySkin': {
+        const skin = SKINS[g.save.currentClass].find((k) => k.id === data.skin);
+        if (!skin || g.save.gold < skin.unlock.price) { g.audio.play('deny'); break; }
+        g.save.gold -= skin.unlock.price;
+        g.save.skinsOwned.push(`${g.save.currentClass}:${skin.id}`);
+        g.audio.play('gold');
+        g.queueSave();
+        this.showWardrobe(g);
+        break;
+      }
+      case 'adminGive': g.adminGive(data.item, 5); break;
+      case 'adminBoss': g.closeOverlay(); g.adminSpawnBoss(data.boss); break;
+      case 'adminCheat': g.adminCheat(data.cheat); if (g.overlay === 'admin') this.showAdmin(g); break;
+      case 'hot': {
+        const inv = g.save.inventory, cs = g.classState();
+        if (data.where === 'inv') {
+          const it = inv[Number(data.key)];
+          if (!it) { g.openOverlay('inventory'); break; }
+          const b = getBase(it.base);
+          if (b.slot === 'consumable') g.useConsumable(it.base);
+          else {
+            const r = equipFromInventory(inv, cs, g.save.currentClass, Number(data.key));
+            if (!r.ok) { g.toast(r.reason, '#ff4f5e'); g.audio.play('deny'); }
+            else { g.refreshStats(); g.audio.play('pickup'); g.toast(`Equipped ${b.name}`, RARITY_COLOR[b.rarity]); g.queueSave(); }
+          }
+        } else g.openOverlay('inventory');
+        break;
+      }
       case 'replayTutorial':
         g.tutorial = { step: 0, moved: 0, dummyHits: 0 };
         this.setTutorial(g.tutorialText());
@@ -486,17 +552,7 @@ export class UI {
   }
 
   // ───────────────────────── HUD ─────────────────────────
-  buildActionBar() {
-    this.el.actions.innerHTML = `
-      <div class="act weapon" id="act-w"><img><span class="key">LMB</span></div>
-      ${[0, 1, 2].map((i) => `<div class="act" id="act-${i}"><img><span class="key"></span><span class="cost"></span><div class="cd"></div><div class="lockico">Lv${ABILITY3_LEVEL}</div></div>`).join('')}
-      <div class="act dodge" id="act-dodge"><span class="glyph">&raquo;</span><span class="key">SPC</span><div class="cd"></div></div>
-      <div class="sep"></div>
-      <div class="act potion" id="act-hp"><img><span class="key">1</span><span class="count"></span></div>
-      <div class="act potion" id="act-mp"><img><span class="key">2</span><span class="count"></span></div>`;
-    $('#act-hp img', this.el.actions).src = toURL(itemIcon(getBase('hp_potion'), '#ff4f5e'));
-    $('#act-mp img', this.el.actions).src = toURL(itemIcon(getBase('mp_potion'), '#4f8bff'));
-  }
+  buildActionBar() { this.el.actions.innerHTML = ''; this.cache.hotSig = null; }
 
   set(key, el, prop, value) {
     if (this.cache[key] === value) return;
@@ -523,37 +579,29 @@ export class UI {
     this.set('xp', e.xp, 'width', cs.level >= MAX_LEVEL ? '100%' : `${(100 * cs.xp) / xpNeed}%`);
     this.set('lvl', e.lvl, 'text', `Lv ${cs.level}${cs.level >= MAX_LEVEL ? ' MAX' : ''}`);
     this.set('cls', e.cls, 'text', c.name);
-    if (this.cache.portraitCls !== pl.cls) {
-      this.cache.portraitCls = pl.cls;
+    if (this.cache.portraitCls !== pl.spriteName) {
+      this.cache.portraitCls = pl.spriteName;
       const cv = e.portrait; const x = cv.getContext('2d'); x.imageSmoothingEnabled = false; x.clearRect(0, 0, cv.width, cv.height);
-      drawSprite(x, 'hero_' + pl.cls, 0, 8, 17);
+      drawSprite(x, pl.spriteName || 'hero_' + pl.cls, 0, 8, 17);
     }
     this.set('buffs', e.buffs, 'html', pl.buffs.map((b) => `<span class="buff ${b.id}">${b.id === 'fury' ? 'FURY' : 'SWIFT'} ${Math.ceil(b.t)}s</span>`).join('') + (pl.rapidT > 0 ? `<span class="buff swift">RAPID ${Math.ceil(pl.rapidT)}s</span>` : ''));
     this.set('gold', e.gold, 'text', g.save.gold);
-    this.set('region', e.region, 'text', g.area === 'hub' ? 'Emberlight Haven' : g.regionDef.name + (g.heroic ? ' (H)' : ''));
+    this.set('region', e.region, 'text', g.area === 'world' ? (g.worldBiome < 0 ? 'Emberlight Haven' : g.regionDef.name) : g.regionDef.name + (g.heroic ? ' (H)' : ''));
     this.set('obj', e.objective, 'text', g.objectiveText());
 
-    // action bar
-    const w = s.weapon;
-    const wb = cs.equip.weapon && getBase(cs.equip.weapon.base);
-    if (wb) this.set('wicon', $('#act-w img', e.actions), 'src', toURL(itemIcon(wb, RARITY_COLOR[wb.rarity])));
+    // hotbar: equipped gear + first bag slots, rebuilt only when they change
+    const sig = hotbarSignature(g);
+    if (sig !== this.cache.hotSig) { this.cache.hotSig = sig; e.actions.innerHTML = hotbarHtml(g); }
     c.abilities.forEach((ab, i) => {
-      const el = $('#act-' + i, e.actions);
-      this.set('aicon' + i, $('img', el), 'src', toURL(abilityIcon(ab.id)));
-      this.set('akey' + i, $('.key', el), 'text', i === 0 ? 'Q' : ab.key);
-      this.set('acost' + i, $('.cost', el), 'text', ab.mp);
+      const chip = $('#chip-' + i, e.actions);
+      if (!chip) return;
       const locked = i === 2 && cs.level < ABILITY3_LEVEL;
-      const total = ab.cd * (1 - s.cdr);
-      const frac = locked ? 0 : pl.cds[i] / total;
-      this.set('acd' + i, $('.cd', el), 'height', `${Math.max(0, Math.min(1, frac)) * 100}%`);
-      const noMana = pl.mp < ab.mp;
-      this.set('acls' + i, el, 'class', `act${locked ? ' locked' : ''}${noMana && !locked ? ' nomana' : ''}${!locked && frac <= 0 && !noMana ? ' ready' : ''}`);
-      el.title = `${ab.name}: ${ab.desc}`;
+      const frac = locked ? 1 : pl.cds[i] / (ab.cd * (1 - s.cdr));
+      this.set('chipcd' + i, $('.cd', chip), 'height', `${Math.max(0, Math.min(1, frac)) * 100}%`);
+      this.set('chipcls' + i, chip, 'class', `chip${locked ? ' locked' : ''}${pl.mp < ab.mp && !locked ? ' nomana' : ''}${!locked && frac <= 0 && pl.mp >= ab.mp ? ' ready' : ''}`);
     });
-    this.set('dodgecd', $('#act-dodge .cd', e.actions), 'height', `${(pl.dodgeCd / 0.8) * 100}%`);
-    this.set('hpc', $('#act-hp .count', e.actions), 'text', countItem(g.save.inventory, 'hp_potion'));
-    this.set('mpc', $('#act-mp .count', e.actions), 'text', countItem(g.save.inventory, 'mp_potion'));
-    void w;
+    const dchip = $('#chip-dodge .cd', e.actions);
+    if (dchip) this.set('dodgecd', dchip, 'height', `${(pl.dodgeCd / 0.8) * 100}%`);
 
     // interaction prompt
     const label = g.nearby && !g.inputBlocked() ? g.nearby.label : null;
@@ -591,6 +639,45 @@ export class UI {
     x.imageSmoothingEnabled = false;
     x.clearRect(0, 0, cv.width, cv.height);
     const map = g.map, pl = g.player;
+    if (g.area === 'world') {
+      if (!this.worldMini || this.worldMini.map !== map) {
+        const c = document.createElement('canvas'); c.width = map.w; c.height = map.h;
+        const cx = c.getContext('2d');
+        const BIOME = ['#4f8f43', '#7a3b2e', '#4a3f8a', '#c9dbea', '#a39b8b'];
+        const img = cx.createImageData(map.w, map.h);
+        for (let i = 0; i < map.w * map.h; i++) {
+          const t = map.t[i];
+          let col = t === 2 ? '#14111c' : t === 6 ? '#3d7fc4' : t === 5 ? '#ff7a3a' : t === 8 ? '#d9cfb8' : t === 7 ? null : BIOME[map.biome[i]];
+          if (!col) col = ['#2f6b3a', '#3b1e1e', '#2a2357', '#8fa3b8', '#2f6b3a'][map.biome[i]];
+          if (t === 5 && map.biome[i] === 2) col = '#ff7ae6';
+          if (t === 5 && map.biome[i] === 3) col = '#3a5f8a';
+          const n = parseInt(col.slice(1), 16);
+          img.data[i * 4] = n >> 16; img.data[i * 4 + 1] = (n >> 8) & 255; img.data[i * 4 + 2] = n & 255; img.data[i * 4 + 3] = 255;
+        }
+        cx.putImageData(img, 0, 0);
+        this.worldMini = { map, c };
+      }
+      // show an 80x64-tile window around the player
+      const vw = 80, vh = 64;
+      const px = pl.x / TILE, py = pl.y / TILE;
+      const sx = Math.max(0, Math.min(map.w - vw, px - vw / 2)), sy = Math.max(0, Math.min(map.h - vh, py - vh / 2));
+      const k = cv.width / vw;
+      x.drawImage(this.worldMini.c, sx, sy, vw, vh, 0, 0, cv.width, cv.height);
+      const dot = (tx, ty, col, size = 3) => {
+        const dx = (tx - sx) * k, dy = (ty - sy) * k;
+        if (dx < 0 || dy < 0 || dx > cv.width || dy > cv.height) return;
+        x.fillStyle = '#000'; x.fillRect(Math.round(dx) - size / 2 - 1, Math.round(dy) - size / 2 - 1, size + 2, size + 2);
+        x.fillStyle = col; x.fillRect(Math.round(dx) - size / 2, Math.round(dy) - size / 2, size, size);
+      };
+      for (const l of g.world.lairs) {
+        const alive = g.enemies.some((en) => en.bossId === l.bossId && !en.dead);
+        dot(l.tx, l.ty, alive ? '#ff4f5e' : '#5a5070', 5);
+      }
+      for (const n of g.npcs) if (n.kind === 'worldPortal') dot(n.x / TILE, n.y / TILE, n.heroic ? '#ff7ae6' : n.region.portal, 4);
+      for (const en of g.enemies) if (!en.dead && !en.isDummy && !en.isBoss && en.elite) dot(en.x / TILE, en.y / TILE, '#ffd36b', 2);
+      dot(px, py, '#ffffff', 3);
+      return;
+    }
     if (g.area === 'hub') {
       if (!this.hubMini || this.hubMini.map !== map) {
         const c = document.createElement('canvas'); c.width = map.w; c.height = map.h;
@@ -727,6 +814,8 @@ const TEMPLATE = `
     <div id="tutorial" class="hudpanel"></div>
   </div>
   <div id="banner"></div>
+  <div id="loot-popup" class="loot-popup"></div>
+  <div id="mythic-flash"></div>
   <div id="overlay" class="overlay"></div>
 `;
 

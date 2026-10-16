@@ -31,7 +31,20 @@ export const THEMES = {
     hazard: ['#ff7ae6', '#c94fd8', '#ffb3f2'], water: ['#3b3470'],
     deco: ['crystal', 'sparkle', 'crystal2', 'pebble'], dark: 0.62, ambient: '#04030f',
   },
+  frost: {
+    bg: '#0c1420', floor: ['#dfe9f2', '#d6e2ee', '#e8f0f7'], speck: ['#ffffff', '#c3d3e3', '#b3c7da'],
+    path: ['#b9c9d8', '#adbfcf'], pathLine: '#93a8bc',
+    wallTop: '#2a3a4f', wallFace: '#6f86a0', wallLine: '#4f6378', wallHi: '#9fb6cf', vein: '#bfe9ff',
+    hazard: ['#3a5f8a', '#7ab8e6', '#e8f6ff'], water: ['#5a86b0', '#6f98bf', '#9fc0dd'],
+    deco: ['snow', 'icechip', 'pebble', 'frostgrass'], dark: 0.12, ambient: '#0a1830',
+  },
 };
+
+// Outdoor (open-world) versions of each biome: natural ground, dirt roads, no stone seams.
+THEMES.mossW = { ...THEMES.moss, base: 'moss', noSeams: true, floor: ['#5b8a3e', '#557f39', '#62944a'], speck: ['#6fa04f', '#4a7533', '#7fb35a'], path: ['#9b8a6a', '#8f7f61'], pathLine: '#7a6b51' };
+THEMES.cinderW = { ...THEMES.cinder, base: 'cinder', noSeams: true, floor: ['#4a3434', '#443030', '#523a38'], speck: ['#5a4040', '#3a2626', '#6b4a3a'], path: ['#6b5a52', '#5f4f48'], pathLine: '#4a3e38' };
+THEMES.prismW = { ...THEMES.prism, base: 'prism', noSeams: true, floor: ['#352f5c', '#302a55', '#3b3466'], speck: ['#463f7a', '#2a2550', '#5a5290'], path: ['#5a5290', '#4f4783'], pathLine: '#3b3470' };
+THEMES.frostW = { ...THEMES.frost, base: 'frost', noSeams: true, path: ['#b9c9d8', '#adbfcf'] };
 
 function canvas(w, h) { const c = document.createElement('canvas'); c.width = w; c.height = h; return c; }
 
@@ -40,17 +53,18 @@ export function buildTiles(themeId) {
   const th = THEMES[themeId];
   const rnd = mulberry32(themeId.length * 977 + 13);
   const tiles = { floor: [], path: [], face: [], top: null, crack: null, deco: [], hazard: [], water: [] };
+  const kind = th.base || themeId;
   for (let v = 0; v < 4; v++) {
     const c = canvas(TILE, TILE), x = c.getContext('2d');
     x.fillStyle = th.floor[v % th.floor.length]; x.fillRect(0, 0, TILE, TILE);
     for (let i = 0; i < 18; i++) { x.fillStyle = th.speck[Math.floor(rnd() * th.speck.length)]; x.fillRect(Math.floor(rnd() * 16), Math.floor(rnd() * 16), 1 + (rnd() < 0.2 ? 1 : 0), 1); }
-    if (themeId !== 'hub') { // stone slab seams
+    if (themeId !== 'hub' && !th.noSeams) { // stone slab seams
       x.fillStyle = th.speck[1];
       if (v === 0) { x.fillRect(0, 15, 16, 1); x.fillRect(15, 0, 1, 16); }
     }
-    if (themeId === 'moss' && v === 3) { x.fillStyle = th.moss; for (let i = 0; i < 10; i++) x.fillRect(Math.floor(rnd() * 14), Math.floor(rnd() * 14), 2, 1); }
-    if (themeId === 'cinder' && v === 2) { x.fillStyle = '#ff7a1a'; x.fillRect(4, 6, 1, 1); x.fillRect(11, 12, 1, 1); }
-    if (themeId === 'prism' && v === 1) { x.fillStyle = '#7ae0ff'; x.fillRect(5, 9, 1, 1); x.fillStyle = '#b46cff'; x.fillRect(12, 3, 1, 1); }
+    if (kind === 'moss' && v === 3) { x.fillStyle = th.moss; for (let i = 0; i < 10; i++) x.fillRect(Math.floor(rnd() * 14), Math.floor(rnd() * 14), 2, 1); }
+    if (kind === 'cinder' && v === 2) { x.fillStyle = '#ff7a1a'; x.fillRect(4, 6, 1, 1); x.fillRect(11, 12, 1, 1); }
+    if (kind === 'prism' && v === 1) { x.fillStyle = '#7ae0ff'; x.fillRect(5, 9, 1, 1); x.fillStyle = '#b46cff'; x.fillRect(12, 3, 1, 1); }
     tiles.floor.push(c);
   }
   for (let v = 0; v < 3; v++) {
@@ -116,6 +130,9 @@ export function buildTiles(themeId) {
       case 'crystal': x.fillStyle = '#7ae0ff'; x.fillRect(ox, oy - 2, 1, 3); x.fillRect(ox + 1, oy - 1, 1, 2); P(ox, oy - 3, '#effbff'); break;
       case 'crystal2': x.fillStyle = '#b46cff'; x.fillRect(ox, oy - 1, 1, 2); x.fillRect(ox + 1, oy - 2, 1, 3); P(ox + 1, oy - 3, '#e6c9ff'); break;
       case 'sparkle': P(ox, oy, '#effbff'); P(ox + 6, oy + 3, '#7ae0ff'); break;
+      case 'snow': P(ox, oy, '#ffffff'); P(ox + 1, oy, '#ffffff'); P(ox + 4, oy + 2, '#ffffff'); P(ox + 2, oy + 5, '#f2f8ff'); break;
+      case 'icechip': x.fillStyle = '#9fd8ff'; x.fillRect(ox, oy, 2, 1); P(ox + 1, oy - 1, '#e8f6ff'); break;
+      case 'frostgrass': for (const [a, b] of [[0, 2], [1, 0], [1, 1], [2, 2], [3, 1]]) P(ox + a, oy + b, '#8fa3b8'); P(ox + 1, oy, '#ffffff'); break;
     }
     tiles.deco.push(c);
   }
@@ -123,16 +140,23 @@ export function buildTiles(themeId) {
   for (let f = 0; f < 4; f++) {
     const c = canvas(TILE, TILE), x = c.getContext('2d');
     const r2 = mulberry32(f * 31 + 7);
-    if (themeId === 'cinder') {
+    if (kind === 'cinder') {
       x.fillStyle = th.hazard[0]; x.fillRect(0, 0, 16, 16);
       x.fillStyle = th.hazard[1];
       for (let i = 0; i < 5; i++) { const yy = (i * 4 + f) % 16; x.fillRect((i * 7 + f * 2) % 13, yy, 4, 2); }
       x.fillStyle = th.hazard[2]; for (let i = 0; i < 3; i++) x.fillRect(Math.floor(r2() * 15), Math.floor(r2() * 15), 1, 1);
-    } else if (themeId === 'prism') {
+    } else if (kind === 'prism') {
       x.fillStyle = th.floor[0]; x.fillRect(0, 0, 16, 16);
       x.fillStyle = th.hazard[f % 2 ? 0 : 1];
       for (const [a, b] of [[1, 8], [2, 7], [3, 7], [4, 8], [5, 9], [6, 8], [7, 7], [8, 6], [9, 6], [10, 7], [11, 8], [12, 8], [13, 7], [14, 8]]) x.fillRect(a, b, 1, 2);
       x.fillStyle = th.hazard[2]; x.fillRect(4 + f * 2, 8, 1, 1);
+    } else if (kind === 'frost') {
+      x.fillStyle = th.floor[0]; x.fillRect(0, 0, 16, 16);
+      x.fillStyle = th.hazard[0];
+      x.fillRect(2, 3, 12, 10); x.fillRect(4, 1, 8, 14);
+      x.fillStyle = th.hazard[1];
+      x.fillRect(4 + (f % 2), 5, 6, 1); x.fillRect(6, 9 - (f % 2), 5, 1);
+      x.fillStyle = th.hazard[2]; x.fillRect(5 + f, 4, 1, 1);
     } else {
       // thorns
       x.fillStyle = th.floor[0]; x.fillRect(0, 0, 16, 16);
@@ -201,4 +225,62 @@ export function drawTile(ctx, map, tiles, th, x, y) {
   ctx.fillStyle = 'rgba(0,0,0,0.28)';
   if (isWallish(map.get(x, y - 1))) ctx.fillRect(px, py, TILE, 4);
   if (isWallish(map.get(x - 1, y))) ctx.fillRect(px, py, 2, TILE);
+}
+
+// ───────── chunked renderer (handles huge maps and per-tile themes) ─────────
+const CHUNK = 32; // tiles
+const MAX_CHUNKS = 36;
+
+export class LevelRenderer {
+  // themeAt(x, y) -> theme id. For single-theme dungeons pass () => theme.
+  constructor(map, themeAt) {
+    this.map = map;
+    this.themeAt = themeAt;
+    this.tileSets = new Map();
+    this.chunks = new Map(); // key -> {canvas, used}
+    this.frame = 0;
+  }
+  tilesFor(themeId) {
+    if (!this.tileSets.has(themeId)) this.tileSets.set(themeId, buildTiles(themeId));
+    return this.tileSets.get(themeId);
+  }
+  themeObj(themeId) { return THEMES[themeId]; }
+  chunk(cx, cy) {
+    const key = cx + ',' + cy;
+    let c = this.chunks.get(key);
+    if (!c) {
+      const cv = canvas(CHUNK * TILE, CHUNK * TILE);
+      const ctx = cv.getContext('2d');
+      ctx.translate(-cx * CHUNK * TILE, -cy * CHUNK * TILE);
+      for (let y = cy * CHUNK; y < (cy + 1) * CHUNK; y++)
+        for (let x = cx * CHUNK; x < (cx + 1) * CHUNK; x++) {
+          if (!this.map.inBounds(x, y)) continue;
+          const th = this.themeAt(x, y);
+          drawTile(ctx, this.map, this.tilesFor(th), THEMES[th], x, y);
+        }
+      c = { canvas: cv };
+      this.chunks.set(key, c);
+      if (this.chunks.size > MAX_CHUNKS) {
+        // evict the least recently used chunk
+        let oldKey = null, old = Infinity;
+        for (const [k, v] of this.chunks) if (v.used < old && k !== key) { old = v.used; oldKey = k; }
+        if (oldKey) this.chunks.delete(oldKey);
+      }
+    }
+    c.used = this.frame;
+    return c.canvas;
+  }
+  draw(ctx, camX, camY, vw, vh) {
+    this.frame++;
+    const size = CHUNK * TILE;
+    const x0 = Math.max(0, Math.floor(camX / size)), y0 = Math.max(0, Math.floor(camY / size));
+    const x1 = Math.min(Math.ceil(this.map.w / CHUNK) - 1, Math.floor((camX + vw) / size));
+    const y1 = Math.min(Math.ceil(this.map.h / CHUNK) - 1, Math.floor((camY + vh) / size));
+    for (let cy = y0; cy <= y1; cy++)
+      for (let cx = x0; cx <= x1; cx++) ctx.drawImage(this.chunk(cx, cy), cx * size, cy * size);
+  }
+  // re-render tiles that changed (e.g. a secret wall broke)
+  invalidate(x, y) {
+    this.chunks.delete(Math.floor(x / CHUNK) + ',' + Math.floor(y / CHUNK));
+  }
 }

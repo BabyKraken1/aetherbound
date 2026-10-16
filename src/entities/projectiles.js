@@ -5,11 +5,12 @@ import { dist } from '../util.js';
 const STYLE = {
   arcane: ['#7a9cff', '#e6ecff'], nature: ['#8fe06a', '#efffd0'], fire: ['#ff7a3a', '#ffe08a'], crystal: ['#7ae0ff', '#ffffff'],
   arrow: ['#d9c6a0', '#ffffff'], firearrow: ['#ff9a4a', '#ffe08a'], crystalarrow: ['#7ae0ff', '#ffffff'], spirit: ['#c48bff', '#f2e6ff'],
+  ice: ['#9fd8ff', '#ffffff'], icearrow: ['#9fd8ff', '#ffffff'],
   steel: ['#e8eef8', '#ffffff'], gold: ['#ffd36b', '#ffffff'], moss: ['#8fe06a', '#efffd0'], orb: ['#b46cff', '#ffffff'],
   // hostile
   enemy: ['#ff4f7a', '#ffe0ea'], thorn: ['#b6ff6a', '#f4ffe0'], magma: ['#ff6a1a', '#ffe08a'], shard: ['#ff7ae6', '#ffffff'],
 };
-const ARROWS = new Set(['arrow', 'firearrow', 'crystalarrow']);
+const ARROWS = new Set(['arrow', 'firearrow', 'crystalarrow', 'icearrow']);
 
 export class Projectiles {
   constructor() { this.list = []; this.pool = []; }

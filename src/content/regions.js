@@ -19,7 +19,23 @@ export const REGIONS = [
     budget: [9, 12], hazard: 'It is dark. Rift cracks hurt. Shardlings explode into shards.', recommended: 12,
     weights: { chaser: 3, shooter: 3, flanker: 2.5, brute: 1.5, lobber: 2, summoner: 1.5, turret: 2, charger: 2 },
   },
+  {
+    id: 'frost', index: 3, name: 'Frostspire Peaks', sub: 'A frozen choir sings at the top of the world',
+    theme: 'frost', portal: '#bfe9ff', boss: 'glacius', rooms: [9, 11], diff: { hp: 5, dmg: 2.9 },
+    budget: [10, 13], hazard: 'Black-ice cracks bite. Frostlings shatter into shards.', recommended: 16,
+    weights: { chaser: 3, shooter: 3, flanker: 3, brute: 2, lobber: 2, summoner: 1.5, turret: 2, charger: 2.5 },
+  },
+];
+
+// Open-world biome bands, from the town outward. `until` is the (noise-warped) distance in tiles
+// from the town center where the biome ends. Each biome uses the region's enemies and difficulty.
+export const BIOMES = [
+  { region: 0, until: 58 },
+  { region: 1, until: 82 },
+  { region: 2, until: 104 },
+  { region: 3, until: 999 },
 ];
 
 // Heroic tier: replayable harder version of every dungeon, unlocked by beating the final boss.
-export const HEROIC = { hp: 1.7, dmg: 1.5, rarityBump: 1, mythicChance: 0.06 };
+export const HEROIC = { hp: 1.7, dmg: 1.5, rarityBump: 1, mythicChance: 0.05 };
+export const NORMAL_MYTHIC_CHANCE = 0.015;
