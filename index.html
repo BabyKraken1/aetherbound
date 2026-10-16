@@ -1,0 +1,1002 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Aetherbound: Chronicles of the Shattered Realm</title>
+<style>
+    * {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+        user-select: none;
+        -webkit-user-select: none;
+    }
+    body {
+        background-color: #0b0e14;
+        color: #e2e8f0;
+        font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        min-height: 100vh;
+        overflow: hidden;
+    }
+    #game-container {
+        position: relative;
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.8);
+        border: 3px solid #1e293b;
+        border-radius: 8px;
+        overflow: hidden;
+        background: #000;
+    }
+    canvas {
+        display: block;
+        image-rendering: pixelated;
+        image-rendering: crisp-edges;
+    }
+    #ui-layer {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        pointer-events: none;
+        display: flex;
+        flex-direction: column;
+        justify-content: space-between;
+        padding: 16px;
+    }
+    .hud-top {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+    }
+    .stats-panel {
+        background: rgba(15, 23, 42, 0.85);
+        border: 2px solid #334155;
+        padding: 12px 16px;
+        border-radius: 6px;
+        min-width: 220px;
+        backdrop-filter: blur(4px);
+    }
+    .bar-container {
+        width: 100%;
+        height: 14px;
+        background: #1e293b;
+        border-radius: 3px;
+        margin-top: 6px;
+        overflow: hidden;
+        border: 1px solid #475569;
+        position: relative;
+    }
+    .bar-fill {
+        height: 100%;
+        transition: width 0.15s ease-out;
+    }
+    .hp-fill { background: linear-gradient(90deg, #dc2626, #ef4444); }
+    .mp-fill { background: linear-gradient(90deg, #2563eb, #3b82f6); }
+    .bar-text {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 10px;
+        font-weight: bold;
+        color: #fff;
+        text-shadow: 1px 1px 2px #000;
+    }
+    .class-badge {
+        font-size: 14px;
+        font-weight: bold;
+        color: #f59e0b;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+    }
+    .stat-line {
+        font-size: 11px;
+        color: #94a3b8;
+        margin-top: 6px;
+    }
+    .boss-bar-container {
+        position: absolute;
+        top: 20px;
+        left: 50%;
+        transform: translateX(-50%);
+        width: 50%;
+        background: rgba(15, 23, 42, 0.9);
+        border: 2px solid #991b1b;
+        border-radius: 6px;
+        padding: 8px 12px;
+        text-align: center;
+        display: none;
+    }
+    .boss-name {
+        font-weight: bold;
+        color: #f87171;
+        font-size: 14px;
+        margin-bottom: 4px;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+    }
+    .boss-hp-fill { background: linear-gradient(90deg, #991b1b, #dc2626); height: 100%; }
+    #inventory-modal {
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        width: 480px;
+        background: rgba(15, 23, 42, 0.95);
+        border: 2px solid #475569;
+        border-radius: 8px;
+        padding: 16px;
+        pointer-events: auto;
+        display: none;
+        box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.7);
+    }
+    .inv-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        border-bottom: 1px solid #334155;
+        padding-bottom: 8px;
+        margin-bottom: 12px;
+    }
+    .inv-grid {
+        display: grid;
+        grid-template-columns: repeat(6, 1fr);
+        gap: 8px;
+    }
+    .inv-slot {
+        width: 60px;
+        height: 60px;
+        background: #1e293b;
+        border: 2px solid #334155;
+        border-radius: 4px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        cursor: pointer;
+        position: relative;
+    }
+    .inv-slot:hover {
+        border-color: #38bdf8;
+    }
+    .inv-slot.equipped {
+        background: #292524;
+        box-shadow: inset 0 0 0 2px #f59e0b;
+    }
+    .rarity-common { border-color: #94a3b8 !important; }
+    .rarity-rare { border-color: #3b82f6 !important; }
+    .rarity-epic { border-color: #a855f7 !important; }
+    .rarity-legendary { border-color: #f59e0b !important; }
+    .tooltip {
+        position: absolute;
+        bottom: 100%;
+        left: 50%;
+        transform: translateX(-50%);
+        background: #0f172a;
+        border: 1px solid #475569;
+        padding: 8px;
+        border-radius: 4px;
+        white-space: nowrap;
+        font-size: 11px;
+        z-index: 10;
+        display: none;
+        pointer-events: none;
+    }
+    .inv-slot:hover .tooltip { display: block; }
+    #class-select-screen {
+        position: absolute;
+        inset: 0;
+        background: #090d16;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        pointer-events: auto;
+        z-index: 100;
+    }
+    .class-cards {
+        display: flex;
+        gap: 16px;
+        margin-top: 24px;
+    }
+    .class-card {
+        background: #1e293b;
+        border: 2px solid #334155;
+        border-radius: 8px;
+        padding: 20px;
+        width: 180px;
+        text-align: center;
+        cursor: pointer;
+        transition: transform 0.15s, border-color 0.15s;
+    }
+    .class-card:hover {
+        transform: translateY(-4px);
+        border-color: #38bdf8;
+    }
+    .class-card h3 { color: #f3f4f6; margin-bottom: 8px; }
+    .class-card p { font-size: 12px; color: #94a3b8; margin-bottom: 12px; }
+    .btn {
+        background: #2563eb;
+        color: #fff;
+        border: none;
+        padding: 8px 16px;
+        border-radius: 4px;
+        cursor: pointer;
+        font-weight: bold;
+    }
+    .btn:hover { background: #1d4ed8; }
+    .controls-hint {
+        position: absolute;
+        bottom: 16px;
+        left: 16px;
+        background: rgba(15, 23, 42, 0.8);
+        border: 1px solid #334155;
+        padding: 8px 12px;
+        border-radius: 4px;
+        font-size: 11px;
+        color: #94a3b8;
+    }
+</style>
+</head>
+<body>
+
+<div id="game-container">
+    <canvas id="gameCanvas" width="960" height="640"></canvas>
+
+    <div id="ui-layer">
+        <div class="hud-top">
+            <div class="stats-panel">
+                <div class="class-badge" id="hud-class-name">Vanguard</div>
+                <div class="bar-container">
+                    <div class="bar-fill hp-fill" id="hp-bar" style="width: 100%;"></div>
+                    <div class="bar-text" id="hp-text">100 / 100 HP</div>
+                </div>
+                <div class="bar-container">
+                    <div class="bar-fill mp-fill" id="mp-bar" style="width: 100%;"></div>
+                    <div class="bar-text" id="mp-text">50 / 50 MP</div>
+                </div>
+                <div class="stat-line" id="stat-line">DMG 20 · DEF 5</div>
+            </div>
+            <div style="text-align: right; background: rgba(15, 23, 42, 0.85); padding: 8px 12px; border-radius: 6px; border: 1px solid #334155;">
+                <div style="font-size: 12px; color: #94a3b8;">REGION</div>
+                <div style="font-weight: bold; color: #38bdf8;" id="region-name">Shattered Sanctum</div>
+                <div style="font-size: 11px; color: #94a3b8; margin-top: 4px;" id="enemy-count"></div>
+            </div>
+        </div>
+
+        <div class="boss-bar-container" id="boss-hud">
+            <div class="boss-name" id="boss-name-text">Valkor, Aether Sovereign</div>
+            <div class="bar-container" style="height: 18px;">
+                <div class="boss-hp-fill" id="boss-hp-bar" style="width: 100%;"></div>
+                <div class="bar-text" id="boss-hp-text">2000 / 2000</div>
+            </div>
+        </div>
+
+        <div class="controls-hint">
+            <strong>Controls:</strong> WASD = Move | Left Click = Attack | Right Click / E = Ability | Space = Dodge Roll | I = Inventory
+        </div>
+    </div>
+
+    <div id="inventory-modal">
+        <div class="inv-header">
+            <h3 style="color: #f1f5f9;">EQUIPMENT & INVENTORY</h3>
+            <span style="font-size: 12px; color: #64748b;">Click to equip · [I] or [ESC] to Close</span>
+        </div>
+        <div class="inv-grid" id="inventory-grid"></div>
+    </div>
+
+    <div id="class-select-screen">
+        <h1 style="color: #38bdf8; font-size: 32px; letter-spacing: 2px;">AETHERBOUND</h1>
+        <p style="color: #94a3b8; margin-top: 8px;">Select your combat class to initiate exploration</p>
+        <div class="class-cards">
+            <div class="class-card" onclick="selectClass('vanguard')">
+                <h3>Vanguard</h3>
+                <p>Heavy melee combatant with high durability and cleaving attacks.</p>
+                <button class="btn">Select</button>
+            </div>
+            <div class="class-card" onclick="selectClass('arcanist')">
+                <h3>Arcanist</h3>
+                <p>Ranged elementalist using piercing energy projectiles and area blasts.</p>
+                <button class="btn">Select</button>
+            </div>
+            <div class="class-card" onclick="selectClass('ranger')">
+                <h3>Ranger</h3>
+                <p>High mobility shooter specializing in rapid projectile fire.</p>
+                <button class="btn">Select</button>
+            </div>
+            <div class="class-card" onclick="selectClass('warden')">
+                <h3>Warden</h3>
+                <p>Hybrid spirit manipulator deploying protective orbital barriers.</p>
+                <button class="btn">Select</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    const canvas = document.getElementById('gameCanvas');
+    const ctx = canvas.getContext('2d');
+    ctx.imageSmoothingEnabled = false;
+
+    // Game State
+    let gameState = 'CLASS_SELECT';
+    let lastTime = performance.now();
+    let camera = { x: 0, y: 0, shake: 0 };
+    let keys = {};
+    let mouse = { x: 0, y: 0, worldX: 0, worldY: 0, down: false, rightDown: false };
+
+    // Map Parameters
+    const MAP_SIZE = 1600;
+    const TILE_SIZE = 32;
+
+    // Base stats before equipment (starter Aether Blade + Runic Vest give the original 20 dmg / 5 def)
+    const BASE_DAMAGE = 8;
+    const BASE_DEFENSE = 1;
+
+    // Class Configuration Data
+    const CLASS_DATA = {
+        vanguard: { name: 'Vanguard', hp: 140, maxHp: 140, mp: 40, maxMp: 40, speed: 2.8, color: '#e11d48', weaponRange: 50, type: 'melee' },
+        arcanist: { name: 'Arcanist', hp: 80, maxHp: 80, mp: 100, maxMp: 100, speed: 3.0, color: '#3b82f6', weaponRange: 350, type: 'ranged' },
+        ranger: { name: 'Ranger', hp: 95, maxHp: 95, mp: 60, maxMp: 60, speed: 3.5, color: '#10b981', weaponRange: 400, type: 'ranged' },
+        warden: { name: 'Warden', hp: 110, maxHp: 110, mp: 70, maxMp: 70, speed: 3.1, color: '#a855f7', weaponRange: 70, type: 'hybrid' }
+    };
+
+    // Player Object
+    let player = {
+        x: MAP_SIZE / 2,
+        y: MAP_SIZE / 2,
+        radius: 14,
+        classType: 'vanguard',
+        hp: 100, maxHp: 100,
+        mp: 50, maxMp: 50,
+        speed: 3,
+        vx: 0, vy: 0,
+        attackCooldown: 0,
+        abilityCooldown: 0,
+        isDodging: false,
+        dodgeTimer: 0,
+        dodgeCd: 0,
+        invulnerableTimer: 0,
+        stats: { damage: 20, defense: 5, critChance: 0.1 },
+        inventory: [],
+        equipped: { weapon: null, armor: null }
+    };
+
+    let projectiles = [];
+    let enemies = [];
+    let particles = [];
+    let damageNumbers = [];
+    let lootItems = [];
+    let dungeonObstacles = [];
+
+    // Procedural Map Obstacles
+    function generateDungeon() {
+        dungeonObstacles = [];
+        for (let i = 0; i < 40; i++) {
+            let ox = Math.floor(Math.random() * (MAP_SIZE - 200)) + 100;
+            let oy = Math.floor(Math.random() * (MAP_SIZE - 200)) + 100;
+            if (Math.hypot(ox - player.x, oy - player.y) > 200) {
+                dungeonObstacles.push({ x: ox, y: oy, w: 64, h: 64 });
+            }
+        }
+    }
+
+    // Push a circle out of any obstacle it overlaps
+    function resolveObstacleCollision(obj) {
+        dungeonObstacles.forEach(o => {
+            const cx = Math.max(o.x, Math.min(obj.x, o.x + o.w));
+            const cy = Math.max(o.y, Math.min(obj.y, o.y + o.h));
+            const dx = obj.x - cx, dy = obj.y - cy;
+            const d = Math.hypot(dx, dy);
+            if (d < obj.radius) {
+                if (d === 0) {
+                    obj.y = o.y - obj.radius;
+                } else {
+                    obj.x = cx + (dx / d) * obj.radius;
+                    obj.y = cy + (dy / d) * obj.radius;
+                }
+            }
+        });
+    }
+
+    function pointInObstacle(x, y) {
+        return dungeonObstacles.some(o => x > o.x && x < o.x + o.w && y > o.y && y < o.y + o.h);
+    }
+
+    // Spawn Enemy Wave
+    function spawnEnemies() {
+        enemies = [];
+        for (let i = 0; i < 18; i++) {
+            let angle = Math.random() * Math.PI * 2;
+            let dist = 250 + Math.random() * 500;
+            let ex = player.x + Math.cos(angle) * dist;
+            let ey = player.y + Math.sin(angle) * dist;
+            let isElite = Math.random() < 0.2;
+            enemies.push({
+                x: Math.max(80, Math.min(MAP_SIZE - 80, ex)),
+                y: Math.max(80, Math.min(MAP_SIZE - 80, ey)),
+                radius: isElite ? 18 : 12,
+                hp: isElite ? 160 : 60,
+                maxHp: isElite ? 160 : 60,
+                type: Math.random() < 0.5 ? 'chaser' : 'shooter',
+                speed: isElite ? 1.5 : 2.1,
+                color: isElite ? '#f59e0b' : '#ef4444',
+                isElite: isElite,
+                attackCd: 0
+            });
+        }
+
+        // Spawn Boss at center
+        enemies.push({
+            x: MAP_SIZE / 2,
+            y: MAP_SIZE / 2 - 300,
+            radius: 36,
+            hp: 1800,
+            maxHp: 1800,
+            type: 'boss',
+            speed: 1.2,
+            color: '#8b5cf6',
+            isBoss: true,
+            phase: 1,
+            attackCd: 0,
+            specialCd: 0
+        });
+    }
+
+    function recalcStats() {
+        const w = player.equipped.weapon, a = player.equipped.armor;
+        player.stats.damage = BASE_DAMAGE + (w ? w.stat : 0);
+        player.stats.defense = BASE_DEFENSE + (a ? a.stat : 0);
+        document.getElementById('stat-line').innerText = `DMG ${player.stats.damage} · DEF ${player.stats.defense}`;
+    }
+
+    function equipItem(item) {
+        player.equipped[item.type] = item;
+        recalcStats();
+        updateInventoryUI();
+    }
+
+    function selectClass(type) {
+        player.classType = type;
+        const c = CLASS_DATA[type];
+        player.hp = c.hp; player.maxHp = c.maxHp;
+        player.mp = c.mp; player.maxMp = c.maxMp;
+        player.speed = c.speed;
+        player.x = MAP_SIZE / 2;
+        player.y = MAP_SIZE / 2;
+        player.attackCooldown = 0;
+        player.abilityCooldown = 0;
+        player.dodgeCd = 0;
+        player.isDodging = false;
+        player.invulnerableTimer = 0;
+        document.getElementById('hud-class-name').innerText = c.name;
+        document.getElementById('class-select-screen').style.display = 'none';
+
+        projectiles = [];
+        particles = [];
+        damageNumbers = [];
+        lootItems = [];
+
+        // Baseline Starter Equipment
+        player.inventory = [
+            { name: 'Aether Blade', type: 'weapon', rarity: 'common', stat: 12 },
+            { name: 'Runic Vest', type: 'armor', rarity: 'common', stat: 4 }
+        ];
+        player.equipped = { weapon: player.inventory[0], armor: player.inventory[1] };
+        recalcStats();
+        updateInventoryUI();
+
+        generateDungeon();
+        spawnEnemies();
+        gameState = 'PLAYING';
+    }
+
+    function returnToClassSelect() {
+        gameState = 'CLASS_SELECT';
+        document.getElementById('class-select-screen').style.display = 'flex';
+        document.getElementById('inventory-modal').style.display = 'none';
+        document.getElementById('boss-hud').style.display = 'none';
+    }
+
+    // Input Listeners
+    window.addEventListener('keydown', (e) => {
+        const k = e.key.toLowerCase();
+        if ([' ', 'arrowup', 'arrowdown', 'arrowleft', 'arrowright'].includes(k)) e.preventDefault();
+        keys[k] = true;
+        if (k === 'i' && gameState === 'PLAYING') toggleInventory();
+        if (k === 'escape') document.getElementById('inventory-modal').style.display = 'none';
+        if (k === 'r' && (gameState === 'GAME_OVER' || gameState === 'VICTORY')) returnToClassSelect();
+    });
+    window.addEventListener('keyup', (e) => { keys[e.key.toLowerCase()] = false; });
+    window.addEventListener('blur', () => { keys = {}; mouse.down = false; mouse.rightDown = false; });
+    canvas.addEventListener('mousemove', (e) => {
+        const rect = canvas.getBoundingClientRect();
+        mouse.x = e.clientX - rect.left;
+        mouse.y = e.clientY - rect.top;
+    });
+    canvas.addEventListener('mousedown', (e) => {
+        if (e.button === 0) mouse.down = true;
+        if (e.button === 2) mouse.rightDown = true;
+    });
+    window.addEventListener('mouseup', (e) => {
+        if (e.button === 0) mouse.down = false;
+        if (e.button === 2) mouse.rightDown = false;
+    });
+    canvas.addEventListener('contextmenu', e => e.preventDefault());
+
+    function toggleInventory() {
+        const modal = document.getElementById('inventory-modal');
+        modal.style.display = modal.style.display === 'block' ? 'none' : 'block';
+    }
+
+    function updateInventoryUI() {
+        const grid = document.getElementById('inventory-grid');
+        grid.innerHTML = '';
+        for (let i = 0; i < 18; i++) {
+            const slot = document.createElement('div');
+            slot.className = 'inv-slot';
+            if (player.inventory[i]) {
+                const item = player.inventory[i];
+                const isEquipped = player.equipped[item.type] === item;
+                slot.classList.add(`rarity-${item.rarity}`);
+                if (isEquipped) slot.classList.add('equipped');
+                slot.innerHTML = `<span style="font-size:10px; text-align:center;">${item.name}</span>
+                                  <div class="tooltip"><strong>${item.name}</strong> (${item.rarity})<br>+${item.stat} ${item.type === 'weapon' ? 'Damage' : 'Defense'}${isEquipped ? '<br><em>Equipped</em>' : ''}</div>`;
+                slot.addEventListener('click', () => equipItem(item));
+            }
+            grid.appendChild(slot);
+        }
+    }
+
+    // Combat Mechanics
+    function triggerPlayerAttack() {
+        if (player.attackCooldown > 0) return;
+        player.attackCooldown = 18;
+
+        const angle = Math.atan2(mouse.worldY - player.y, mouse.worldX - player.x);
+        let dmg = player.stats.damage + Math.floor(Math.random() * 5);
+        const isCrit = Math.random() < player.stats.critChance;
+        if (isCrit) dmg = Math.floor(dmg * 1.75);
+
+        if (player.classType === 'vanguard') {
+            // Melee Arc Cleave
+            camera.shake = 3;
+            enemies.forEach(e => {
+                let dist = Math.hypot(e.x - player.x, e.y - player.y);
+                let eAngle = Math.atan2(e.y - player.y, e.x - player.x);
+                let diff = Math.abs(angle - eAngle);
+                if (dist < 75 + e.radius && (diff < 0.8 || diff > Math.PI * 2 - 0.8)) {
+                    applyDamageToEnemy(e, dmg, isCrit);
+                }
+            });
+            // Swing FX
+            for (let i = 0; i < 8; i++) {
+                particles.push({
+                    x: player.x + Math.cos(angle) * 30,
+                    y: player.y + Math.sin(angle) * 30,
+                    vx: Math.cos(angle + (Math.random() - 0.5)) * 4,
+                    vy: Math.sin(angle + (Math.random() - 0.5)) * 4,
+                    life: 12, color: '#f59e0b'
+                });
+            }
+        } else {
+            // Ranged Projectiles
+            projectiles.push({
+                x: player.x, y: player.y,
+                vx: Math.cos(angle) * 9,
+                vy: Math.sin(angle) * 9,
+                radius: 5,
+                damage: dmg,
+                isCrit: isCrit,
+                isFriendly: true,
+                life: 60,
+                color: player.classType === 'arcanist' ? '#38bdf8' : player.classType === 'warden' ? '#c084fc' : '#10b981'
+            });
+        }
+    }
+
+    function triggerPlayerAbility() {
+        if (player.abilityCooldown > 0 || player.mp < 15) return;
+        player.mp -= 15;
+        player.abilityCooldown = 120;
+
+        const angle = Math.atan2(mouse.worldY - player.y, mouse.worldX - player.x);
+
+        if (player.classType === 'arcanist') {
+            // Area Blast
+            for (let a = 0; a < Math.PI * 2; a += Math.PI / 6) {
+                projectiles.push({
+                    x: player.x, y: player.y,
+                    vx: Math.cos(a) * 6, vy: Math.sin(a) * 6,
+                    radius: 6, damage: 35, isFriendly: true, life: 40, color: '#a855f7'
+                });
+            }
+        } else {
+            // Dash Strike or Heavy Projectile
+            projectiles.push({
+                x: player.x, y: player.y,
+                vx: Math.cos(angle) * 12, vy: Math.sin(angle) * 12,
+                radius: 10, damage: 60, isFriendly: true, life: 50, color: '#f43f5e'
+            });
+        }
+    }
+
+    function applyDamageToEnemy(e, dmg, isCrit) {
+        if (e.hp <= 0) return;
+        e.hp -= dmg;
+        damageNumbers.push({ x: e.x, y: e.y - 10, text: dmg, color: isCrit ? '#f59e0b' : '#ffffff', life: 30 });
+
+        if (e.hp <= 0) {
+            // Death burst
+            for (let i = 0; i < 12; i++) {
+                const a = Math.random() * Math.PI * 2;
+                particles.push({ x: e.x, y: e.y, vx: Math.cos(a) * 3, vy: Math.sin(a) * 3, life: 20, color: e.color });
+            }
+            // Drop Loot
+            if (e.isBoss || Math.random() < 0.45) {
+                const rarities = ['common', 'rare', 'epic', 'legendary'];
+                const r = rarities[Math.floor(Math.random() * (e.isBoss ? 4 : 2))];
+                lootItems.push({
+                    x: e.x, y: e.y,
+                    name: e.isBoss ? 'Aetherial Core' : 'Relic Shard',
+                    rarity: r,
+                    type: Math.random() < 0.5 ? 'weapon' : 'armor',
+                    stat: Math.floor(Math.random() * 15) + 5
+                });
+            }
+        }
+    }
+
+    function applyDamageToPlayer(amount) {
+        if (player.invulnerableTimer > 0 || player.isDodging) return;
+        let netDmg = Math.max(1, amount - player.stats.defense);
+        player.hp -= netDmg;
+        player.invulnerableTimer = 30;
+        camera.shake = 6;
+        damageNumbers.push({ x: player.x, y: player.y - 10, text: netDmg, color: '#ef4444', life: 35 });
+
+        if (player.hp <= 0) {
+            player.hp = 0;
+            gameState = 'GAME_OVER';
+        }
+    }
+
+    // Update Loop
+    function update() {
+        if (gameState !== 'PLAYING') return;
+
+        // Player Cooldowns
+        if (player.attackCooldown > 0) player.attackCooldown--;
+        if (player.abilityCooldown > 0) player.abilityCooldown--;
+        if (player.dodgeCd > 0) player.dodgeCd--;
+        if (player.invulnerableTimer > 0) player.invulnerableTimer--;
+
+        // Dodge Roll Handling
+        if (keys[' '] && player.dodgeCd === 0 && !player.isDodging) {
+            player.isDodging = true;
+            player.dodgeTimer = 12;
+            player.dodgeCd = 45;
+        }
+
+        let moveSpeed = player.speed;
+        if (player.isDodging) {
+            moveSpeed *= 2.2;
+            player.dodgeTimer--;
+            if (player.dodgeTimer <= 0) player.isDodging = false;
+        }
+
+        // Movement Computation
+        let dx = 0, dy = 0;
+        if (keys['w'] || keys['arrowup']) dy -= 1;
+        if (keys['s'] || keys['arrowdown']) dy += 1;
+        if (keys['a'] || keys['arrowleft']) dx -= 1;
+        if (keys['d'] || keys['arrowright']) dx += 1;
+
+        if (dx !== 0 && dy !== 0) {
+            dx *= 0.7071;
+            dy *= 0.7071;
+        }
+
+        player.x += dx * moveSpeed;
+        player.y += dy * moveSpeed;
+        resolveObstacleCollision(player);
+
+        // Map Boundaries
+        player.x = Math.max(30, Math.min(MAP_SIZE - 30, player.x));
+        player.y = Math.max(30, Math.min(MAP_SIZE - 30, player.y));
+
+        // Mouse Aiming Coordinates
+        mouse.worldX = mouse.x + camera.x;
+        mouse.worldY = mouse.y + camera.y;
+
+        const invOpen = document.getElementById('inventory-modal').style.display === 'block';
+        if (mouse.down && !invOpen) triggerPlayerAttack();
+        if ((mouse.rightDown || keys['e']) && !invOpen) triggerPlayerAbility();
+
+        // Camera Positioning
+        camera.x = player.x - canvas.width / 2;
+        camera.y = player.y - canvas.height / 2;
+        if (camera.shake > 0) {
+            camera.x += (Math.random() - 0.5) * camera.shake;
+            camera.y += (Math.random() - 0.5) * camera.shake;
+            camera.shake *= 0.9;
+        }
+
+        // Mana Regeneration
+        if (player.mp < player.maxMp) player.mp = Math.min(player.maxMp, player.mp + 0.08);
+
+        // Projectile Physics
+        for (let i = projectiles.length - 1; i >= 0; i--) {
+            let p = projectiles[i];
+            p.x += p.vx;
+            p.y += p.vy;
+            p.life--;
+
+            if (pointInObstacle(p.x, p.y)) p.life = 0;
+
+            // Collision Checks
+            if (p.life > 0 && p.isFriendly) {
+                for (const e of enemies) {
+                    if (e.hp > 0 && Math.hypot(p.x - e.x, p.y - e.y) < p.radius + e.radius) {
+                        applyDamageToEnemy(e, p.damage, p.isCrit);
+                        p.life = 0;
+                        break;
+                    }
+                }
+            } else if (p.life > 0) {
+                if (Math.hypot(p.x - player.x, p.y - player.y) < p.radius + player.radius) {
+                    applyDamageToPlayer(p.damage);
+                    p.life = 0;
+                }
+            }
+
+            if (p.life <= 0) projectiles.splice(i, 1);
+        }
+
+        // Particles
+        for (let i = particles.length - 1; i >= 0; i--) {
+            const pt = particles[i];
+            pt.x += pt.vx; pt.y += pt.vy;
+            pt.vx *= 0.9; pt.vy *= 0.9;
+            if (--pt.life <= 0) particles.splice(i, 1);
+        }
+
+        // Enemy AI Operations
+        let bossObj = null;
+        for (let i = enemies.length - 1; i >= 0; i--) {
+            let e = enemies[i];
+            if (e.hp <= 0) {
+                enemies.splice(i, 1);
+                continue;
+            }
+
+            if (e.isBoss) bossObj = e;
+
+            let dist = Math.hypot(player.x - e.x, player.y - e.y);
+            let angle = Math.atan2(player.y - e.y, player.x - e.x);
+
+            if (e.type === 'chaser') {
+                e.x += Math.cos(angle) * e.speed;
+                e.y += Math.sin(angle) * e.speed;
+                if (dist < e.radius + player.radius) applyDamageToPlayer(12);
+            } else if (e.type === 'shooter') {
+                if (dist > 180) {
+                    e.x += Math.cos(angle) * e.speed;
+                    e.y += Math.sin(angle) * e.speed;
+                }
+                e.attackCd = (e.attackCd || 0) + 1;
+                if (e.attackCd > 90 && dist < 600) {
+                    e.attackCd = 0;
+                    projectiles.push({
+                        x: e.x, y: e.y,
+                        vx: Math.cos(angle) * 5, vy: Math.sin(angle) * 5,
+                        radius: 5, damage: 14, isFriendly: false, life: 100, color: '#f43f5e'
+                    });
+                }
+            } else if (e.type === 'boss') {
+                // Enraged below half health
+                if (e.phase === 1 && e.hp < e.maxHp / 2) {
+                    e.phase = 2;
+                    e.speed = 1.8;
+                    camera.shake = 12;
+                }
+                if (dist > 220) {
+                    e.x += Math.cos(angle) * e.speed;
+                    e.y += Math.sin(angle) * e.speed;
+                }
+                if (dist < e.radius + player.radius) applyDamageToPlayer(25);
+                e.attackCd = (e.attackCd || 0) + 1;
+                if (e.attackCd > (e.phase === 2 ? 40 : 60)) {
+                    e.attackCd = 0;
+                    // Spiral Shot Pattern (rotates each volley)
+                    e.spin = (e.spin || 0) + 0.3;
+                    const step = e.phase === 2 ? Math.PI / 6 : Math.PI / 4;
+                    for (let a = 0; a < Math.PI * 2; a += step) {
+                        projectiles.push({
+                            x: e.x, y: e.y,
+                            vx: Math.cos(a + e.spin) * 4, vy: Math.sin(a + e.spin) * 4,
+                            radius: 7, damage: 18, isFriendly: false, life: 120, color: '#a855f7'
+                        });
+                    }
+                }
+            }
+
+            resolveObstacleCollision(e);
+            e.x = Math.max(e.radius, Math.min(MAP_SIZE - e.radius, e.x));
+            e.y = Math.max(e.radius, Math.min(MAP_SIZE - e.radius, e.y));
+        }
+
+        if (enemies.length === 0) gameState = 'VICTORY';
+
+        // Boss UI Synchronization
+        const bossHud = document.getElementById('boss-hud');
+        if (bossObj) {
+            bossHud.style.display = 'block';
+            const pct = Math.max(0, (bossObj.hp / bossObj.maxHp) * 100);
+            document.getElementById('boss-hp-bar').style.width = pct + '%';
+            document.getElementById('boss-hp-text').innerText = `${Math.max(0, Math.ceil(bossObj.hp))} / ${bossObj.maxHp}`;
+        } else {
+            bossHud.style.display = 'none';
+        }
+        document.getElementById('enemy-count').innerText = `Enemies left: ${enemies.length}`;
+
+        // Loot Pickup Detection
+        for (let i = lootItems.length - 1; i >= 0; i--) {
+            let item = lootItems[i];
+            if (Math.hypot(player.x - item.x, player.y - item.y) < 30) {
+                if (player.inventory.length < 18) {
+                    player.inventory.push(item);
+                    updateInventoryUI();
+                    lootItems.splice(i, 1);
+                    damageNumbers.push({ x: player.x, y: player.y - 24, text: `+ ${item.name}`, color: '#38bdf8', life: 45 });
+                }
+            }
+        }
+
+        // Update HUD Bars
+        document.getElementById('hp-bar').style.width = (player.hp / player.maxHp * 100) + '%';
+        document.getElementById('hp-text').innerText = `${Math.ceil(player.hp)} / ${player.maxHp} HP`;
+        document.getElementById('mp-bar').style.width = (player.mp / player.maxMp * 100) + '%';
+        document.getElementById('mp-text').innerText = `${Math.floor(player.mp)} / ${player.maxMp} MP`;
+    }
+
+    // Render Engine
+    function render() {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        if (gameState === 'CLASS_SELECT') return;
+
+        ctx.save();
+        ctx.translate(-camera.x, -camera.y);
+
+        // Grid Floor Rendering
+        ctx.strokeStyle = '#1e293b';
+        ctx.lineWidth = 1;
+        for (let x = 0; x < MAP_SIZE; x += TILE_SIZE) {
+            ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, MAP_SIZE); ctx.stroke();
+        }
+        for (let y = 0; y < MAP_SIZE; y += TILE_SIZE) {
+            ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(MAP_SIZE, y); ctx.stroke();
+        }
+
+        // Map Boundaries
+        ctx.strokeStyle = '#dc2626';
+        ctx.lineWidth = 4;
+        ctx.strokeRect(0, 0, MAP_SIZE, MAP_SIZE);
+
+        // Obstacles
+        ctx.fillStyle = '#334155';
+        dungeonObstacles.forEach(o => {
+            ctx.fillRect(o.x, o.y, o.w, o.h);
+        });
+
+        // Loot Items
+        lootItems.forEach(item => {
+            ctx.fillStyle = item.rarity === 'legendary' ? '#f59e0b' : item.rarity === 'epic' ? '#a855f7' : item.rarity === 'rare' ? '#3b82f6' : '#94a3b8';
+            ctx.beginPath();
+            ctx.arc(item.x, item.y, 6, 0, Math.PI * 2);
+            ctx.fill();
+        });
+
+        // Particles
+        particles.forEach(pt => {
+            ctx.globalAlpha = Math.max(0, pt.life / 20);
+            ctx.fillStyle = pt.color;
+            ctx.fillRect(pt.x - 2, pt.y - 2, 4, 4);
+        });
+        ctx.globalAlpha = 1;
+
+        // Projectiles
+        projectiles.forEach(p => {
+            ctx.fillStyle = p.color;
+            ctx.beginPath();
+            ctx.arc(p.x, p.y, p.radius, 0, Math.PI * 2);
+            ctx.fill();
+        });
+
+        // Enemies
+        enemies.forEach(e => {
+            ctx.fillStyle = e.isBoss && e.phase === 2 ? '#c026d3' : e.color;
+            ctx.beginPath();
+            ctx.arc(e.x, e.y, e.radius, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Enemy Health Bar
+            if (e.hp < e.maxHp && !e.isBoss) {
+                ctx.fillStyle = '#000';
+                ctx.fillRect(e.x - 15, e.y - e.radius - 10, 30, 4);
+                ctx.fillStyle = '#ef4444';
+                ctx.fillRect(e.x - 15, e.y - e.radius - 10, (e.hp / e.maxHp) * 30, 4);
+            }
+        });
+
+        // Player Sprite
+        ctx.globalAlpha = player.isDodging ? 0.5 : 1;
+        ctx.fillStyle = player.invulnerableTimer > 0 && Math.floor(Date.now() / 50) % 2 === 0 ? '#ffffff' : CLASS_DATA[player.classType].color;
+        ctx.beginPath();
+        ctx.arc(player.x, player.y, player.radius, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.globalAlpha = 1;
+
+        // Aim Indicator Line
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.3)';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(player.x, player.y);
+        ctx.lineTo(mouse.worldX, mouse.worldY);
+        ctx.stroke();
+
+        // Floating Damage Numbers
+        for (let i = damageNumbers.length - 1; i >= 0; i--) {
+            let d = damageNumbers[i];
+            ctx.fillStyle = d.color;
+            ctx.font = 'bold 12px sans-serif';
+            ctx.textAlign = 'left';
+            ctx.fillText(d.text, d.x, d.y);
+            d.y -= 0.5;
+            d.life--;
+            if (d.life <= 0) damageNumbers.splice(i, 1);
+        }
+
+        ctx.restore();
+
+        // Game Over / Victory Overlay
+        if (gameState === 'GAME_OVER' || gameState === 'VICTORY') {
+            const won = gameState === 'VICTORY';
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.75)';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            ctx.fillStyle = won ? '#f59e0b' : '#ef4444';
+            ctx.font = 'bold 36px sans-serif';
+            ctx.textAlign = 'center';
+            ctx.fillText(won ? 'THE REALM IS RESTORED' : 'YOU HAVE PERISHED', canvas.width / 2, canvas.height / 2 - 20);
+            ctx.font = '16px sans-serif';
+            ctx.fillStyle = '#94a3b8';
+            ctx.fillText('Press R to choose a class and play again', canvas.width / 2, canvas.height / 2 + 20);
+            ctx.textAlign = 'left';
+        }
+    }
+
+    // Main Game Loop (fixed 60 updates/sec so speed is the same on 120Hz screens)
+    const STEP = 1000 / 60;
+    let acc = 0;
+    function gameLoop(time) {
+        acc += Math.min(250, time - lastTime);
+        lastTime = time;
+        while (acc >= STEP) {
+            update();
+            acc -= STEP;
+        }
+        render();
+        requestAnimationFrame(gameLoop);
+    }
+
+    requestAnimationFrame(gameLoop);
+</script>
+</body>
+</html>
