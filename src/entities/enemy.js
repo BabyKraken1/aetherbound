@@ -328,6 +328,6 @@ export class Dummy {
     drawSprite(ctx, 'dummy', 0, 0, 0, { flash: this.flash > 0 });
     ctx.restore();
     const d = this.dps();
-    if (d > 0) g.drawLabel(ctx, `${d} DPS`, this.x, this.y - 26, '#ffd36b');
+    if (d > 0) g.drawLabel(ctx, `${d} DPS`, this.x, this.y - 40, '#ffd36b');
   }
 }
